@@ -51,6 +51,8 @@ frontend/npm-debug.log
 frontend/yarn-error.log
 frontend/testem.log
 frontend/typings/
+frontend/.angular/
+frontend/.angular/cache/
 
 # IDEs
 .vscode/
