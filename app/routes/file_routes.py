@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from typing import List
+from pydantic import BaseModel
 import logging
 from services.file_service import FileService
 
@@ -9,6 +10,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/files", tags=["files"])
+
+# Pydantic models
+class MultipleFilesDataRequest(BaseModel):
+    filenames: List[str]
+    sample_size: int = 100
 
 # Dependency to get FileService instance
 def get_file_service():
@@ -106,6 +112,66 @@ async def get_files_metadata(
     except Exception as e:
         logger.error(f"Error retrieving metadata: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve file metadata")
+
+@router.get("/data/{filename}")
+async def get_file_data(
+    filename: str,
+    sample_size: int = 100,
+    file_service: FileService = Depends(get_file_service)
+):
+    """
+    Get actual data from a specific Excel/CSV file
+    """
+    logger.info(f"Data request received for file: {filename}, sample size: {sample_size}")
+    
+    try:
+        data = file_service.read_file_data(filename, sample_size)
+        
+        if data is None:
+            raise HTTPException(status_code=404, detail=f"File not found or could not be read: {filename}")
+        
+        response = {
+            "filename": filename,
+            "sample_size": sample_size,
+            "total_rows": len(data),
+            "data": data
+        }
+        
+        logger.info(f"Data response for {filename}: {len(data)} rows")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving data from {filename}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve data from {filename}")
+
+@router.post("/data/multiple")
+async def get_multiple_files_data(
+    request: MultipleFilesDataRequest,
+    file_service: FileService = Depends(get_file_service)
+):
+    """
+    Get data from multiple Excel/CSV files
+    """
+    logger.info(f"Multiple files data request received for {len(request.filenames)} files, sample size: {request.sample_size}")
+    
+    try:
+        data = file_service.get_multiple_files_data(request.filenames, request.sample_size)
+        
+        response = {
+            "sample_size": request.sample_size,
+            "files_data": data,
+            "total_files": len(request.filenames),
+            "files_with_data": len([f for f in data.values() if f])
+        }
+        
+        logger.info(f"Multiple files data response: {len(request.filenames)} files processed")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error retrieving multiple files data: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve multiple files data")
 
 @router.get("/health")
 async def health_check():

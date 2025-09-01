@@ -1,6 +1,7 @@
 import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -21,6 +22,7 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
     CommonModule,
     FormsModule,
     ReactiveFormsModule,
+    RouterModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
@@ -178,6 +180,19 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
             {{ filesMetadata.length }} file{{ filesMetadata.length !== 1 ? 's' : '' }} processed
           </mat-card-subtitle>
         </mat-card-header>
+        
+        <mat-card-actions>
+
+          
+          <button 
+            mat-raised-button 
+            color="primary"
+            routerLink="/column-selection"
+            class="column-selection-btn">
+            <mat-icon>🎯</mat-icon>
+            Select Columns
+          </button>
+        </mat-card-actions>
         
         <mat-card-content>
           <div class="table-container">

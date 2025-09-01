@@ -21,6 +21,25 @@ export interface MetadataResponse {
   total_files: number;
 }
 
+export interface FileDataResponse {
+  filename: string;
+  sample_size: number;
+  total_rows: number;
+  data: any[];
+}
+
+export interface MultipleFilesDataRequest {
+  filenames: string[];
+  sample_size: number;
+}
+
+export interface MultipleFilesDataResponse {
+  sample_size: number;
+  files_data: { [filename: string]: any[] };
+  total_files: number;
+  files_with_data: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -96,5 +115,19 @@ export class FileService {
       default:
         return '📄';
     }
+  }
+
+  /**
+   * Get actual data from a specific file
+   */
+  getFileData(filename: string, sampleSize: number = 100): Observable<FileDataResponse> {
+    return this.http.get<FileDataResponse>(`${this.apiUrl}/data/${filename}?sample_size=${sampleSize}`);
+  }
+
+  /**
+   * Get data from multiple files
+   */
+  getMultipleFilesData(request: MultipleFilesDataRequest): Observable<MultipleFilesDataResponse> {
+    return this.http.post<MultipleFilesDataResponse>(`${this.apiUrl}/data/multiple`, request);
   }
 } 

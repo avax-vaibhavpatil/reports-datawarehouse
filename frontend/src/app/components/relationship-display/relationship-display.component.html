@@ -1,0 +1,167 @@
+<div class="relationship-container">
+  <!-- Header Card -->
+  <mat-card class="header-card">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>schema</mat-icon>
+        Relationship Management
+      </mat-card-title>
+      <mat-card-subtitle>
+        View and manage relationships between your Excel files
+      </mat-card-subtitle>
+    </mat-card-header>
+    <mat-card-content>
+      <div class="summary-stats" *ngIf="summary">
+        <div class="stat-item total">
+          <span class="stat-number">{{ summary.total }}</span>
+          <span class="stat-label">Total</span>
+        </div>
+        <div class="stat-item strong">
+          <span class="stat-number">{{ summary.strong }}</span>
+          <span class="stat-label">Strong</span>
+        </div>
+        <div class="stat-item medium">
+          <span class="stat-number">{{ summary.medium }}</span>
+          <span class="stat-label">Medium</span>
+        </div>
+        <div class="stat-item weak">
+          <span class="stat-number">{{ summary.weak }}</span>
+          <span class="stat-label">Weak</span>
+        </div>
+        <div class="stat-item automatic">
+          <span class="stat-number">{{ summary.automatic }}</span>
+          <span class="stat-label">Automatic</span>
+        </div>
+        <div class="stat-item manual">
+          <span class="stat-number">{{ summary.manual }}</span>
+          <span class="stat-label">Manual</span>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Relationships Table -->
+  <mat-card class="table-card" *ngIf="relationships.length > 0">
+    <mat-card-header>
+      <mat-card-title>Detected Relationships</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <table mat-table [dataSource]="relationships" class="relationship-table">
+        
+        <!-- Source Table Column -->
+        <ng-container matColumnDef="source_table">
+          <th mat-header-cell *matHeaderCellDef>Source Table</th>
+          <td mat-cell *matCellDef="let relationship">
+            <strong>{{ relationship.source_table }}</strong>
+          </td>
+        </ng-container>
+
+        <!-- Source Column Column -->
+        <ng-container matColumnDef="source_column">
+          <th mat-header-cell *matHeaderCellDef>Source Column</th>
+          <td mat-cell *matCellDef="let relationship">
+            <code>{{ relationship.source_column }}</code>
+          </td>
+        </ng-container>
+
+        <!-- Relationship Arrow -->
+        <ng-container matColumnDef="arrow">
+          <th mat-header-cell *matHeaderCellDef>→</th>
+          <td mat-cell *matCellDef="let relationship">
+            <span class="arrow">→</span>
+          </td>
+        </ng-container>
+
+        <!-- Target Table Column -->
+        <ng-container matColumnDef="target_table">
+          <th mat-header-cell *matHeaderCellDef>Target Table</th>
+          <td mat-cell *matCellDef="let relationship">
+            <strong>{{ relationship.target_table }}</strong>
+          </td>
+        </ng-container>
+
+        <!-- Target Column Column -->
+        <ng-container matColumnDef="target_column">
+          <th mat-header-cell *matHeaderCellDef>Target Column</th>
+          <td mat-cell *matCellDef="let relationship">
+            <code>{{ relationship.target_column }}</code>
+          </td>
+        </ng-container>
+
+        <!-- Strength Column -->
+        <ng-container matColumnDef="strength">
+          <th mat-header-cell *matHeaderCellDef>Strength</th>
+          <td mat-cell *matCellDef="let relationship">
+            <mat-chip 
+              [style.background-color]="getStrengthColor(relationship.strength)"
+              [style.color]="'white'">
+              {{ getStrengthIcon(relationship.strength) }} {{ relationship.strength }}
+            </mat-chip>
+          </td>
+        </ng-container>
+
+        <!-- Confidence Column -->
+        <ng-container matColumnDef="confidence">
+          <th mat-header-cell *matHeaderCellDef>Confidence</th>
+          <td mat-cell *matCellDef="let relationship">
+            <span class="confidence">{{ relationship.confidence }}%</span>
+          </td>
+        </ng-container>
+
+        <!-- Source Type Column -->
+        <ng-container matColumnDef="source">
+          <th mat-header-cell *matHeaderCellDef>Source</th>
+          <td mat-cell *matCellDef="let relationship">
+            <mat-chip 
+              [style.background-color]="relationship.source === 'manual' ? '#2196f3' : '#4caf50'"
+              [style.color]="'white'">
+              {{ relationship.source === 'manual' ? '🔧 Manual' : '🤖 Auto' }}
+            </mat-chip>
+          </td>
+        </ng-container>
+
+        <!-- Actions Column -->
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Actions</th>
+          <td mat-cell *matCellDef="let relationship">
+            <button 
+              mat-icon-button 
+              color="primary"
+              matTooltip="View details"
+              (click)="viewRelationshipDetails(relationship)">
+              <mat-icon>visibility</mat-icon>
+            </button>
+            <button 
+              *ngIf="relationship.source === 'manual'"
+              mat-icon-button 
+              color="accent"
+              matTooltip="Edit relationship"
+              (click)="editRelationship(relationship)">
+              <mat-icon>edit</mat-icon>
+            </button>
+            <button 
+              *ngIf="relationship.source === 'manual'"
+              mat-icon-button 
+              color="warn"
+              matTooltip="Delete relationship"
+              (click)="deleteRelationship(relationship)">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+      </table>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- No Data State -->
+  <mat-card *ngIf="relationships.length === 0" class="no-data-card">
+    <mat-card-content class="no-data">
+      <mat-icon>link_off</mat-icon>
+      <h3>No relationships found</h3>
+      <p>Relationships will appear here once they are detected or created</p>
+    </mat-card-content>
+  </mat-card>
+</div> 

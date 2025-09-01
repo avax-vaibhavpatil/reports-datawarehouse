@@ -9,7 +9,7 @@ import { CommonModule } from '@angular/common';
   template: `
     <div class="app-container">
       <header class="app-header">
-        <h1>📊 Excel Generator</h1>
+        <h1>📊 Data Relationship </h1>
         <p>Upload Excel files and explore their structure</p>
       </header>
       

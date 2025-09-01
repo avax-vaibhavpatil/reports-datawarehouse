@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import file_routes
+from routes import file_routes, relationship_routes, column_mapping_routes
 import logging
 
 # Configure logging
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Create FastAPI instance
 app = FastAPI(
     title="Excel Generator API",
-    description="A FastAPI backend for processing Excel files with DuckDB",
+    description="A FastAPI backend for processing Excel files with relationship detection",
     version="1.0.0"
 )
 
@@ -28,10 +28,12 @@ app.add_middleware(
 
 # Include routers
 app.include_router(file_routes.router)
+app.include_router(relationship_routes.router)
+app.include_router(column_mapping_routes.router)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Starting Excel Generator API...")
+    logger.info("Starting Excel Generator API with relationship detection...")
     logger.info("API is ready to accept requests")
 
 @app.on_event("shutdown")
@@ -41,14 +43,15 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     return {
-        "message": "Excel Generator API",
+        "message": "Excel Generator API with Relationship Detection",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/api/files/health"
+        "health": "/api/files/health",
+        "relationships": "/api/relationships/health",
+        "column-mapping": "/api/column-mapping/health"
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
-
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 #vaibhav
