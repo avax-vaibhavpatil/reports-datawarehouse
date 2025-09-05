@@ -132,6 +132,49 @@ class ColumnMappingService:
         
         return None
 
+    def create_composite_relationship(self, table1: str, table2: str, column_pairs: List[Dict]) -> Dict:
+        """Create a composite key relationship between two tables
+        
+        Args:
+            table1: First table name
+            table2: Second table name  
+            column_pairs: List of column pairs like [{"table1_col": "ins_voucher_no", "table2_col": "lg_voucher_no"}]
+        """
+        if len(column_pairs) < 2:
+            raise ValueError("Composite relationship requires at least 2 column pairs")
+        
+        # Create individual mappings for each column pair
+        mappings = []
+        for pair in column_pairs:
+            mapping = {
+                "from_table": table1,
+                "from_column": pair["table1_col"],
+                "to_table": table2,
+                "to_column": pair["table2_col"],
+                "relationship": "=",
+                "description": f"{table1}.{pair['table1_col']} = {table2}.{pair['table2_col']}",
+                "type": "composite_key_relationship",
+                "composite_group_id": f"{table1}_{table2}_{len(self.column_mappings)}"
+            }
+            mappings.append(mapping)
+        
+        # Add all mappings to the list
+        self.column_mappings.extend(mappings)
+        
+        # Create composite relationship summary
+        composite_relationship = {
+            "table1": table1,
+            "table2": table2,
+            "column_pairs": column_pairs,
+            "mapping_count": len(column_pairs),
+            "description": f"Composite join between {table1} and {table2} on {len(column_pairs)} columns",
+            "type": "composite_relationship",
+            "mappings": mappings
+        }
+        
+        self.logger.info(f"Created composite relationship: {composite_relationship['description']}")
+        return composite_relationship
+
     def manual_relationship(self, from_table: str, from_column: str, to_table: str, to_column: str, relationship: str) -> Dict:
         """Create a manual relationship between two columns"""
         return {

@@ -91,6 +91,18 @@ export class ColumnMappingService {
   }
 
   /**
+   * Create a composite key relationship between two tables
+   */
+  createCompositeRelationship(table1: string, table2: string, columnPairs: any[]): Observable<any> {
+    const request = {
+      table1: table1,
+      table2: table2,
+      column_pairs: columnPairs
+    };
+    return this.http.post(`${this.apiUrl}/create-composite-relationship`, request);
+  }
+
+  /**
    * Health check for column mapping service
    */
   healthCheck(): Observable<any> {

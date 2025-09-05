@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import file_routes, relationship_routes, column_mapping_routes
+from .routes import file_routes, relationship_routes, column_mapping_routes
 import logging
 
 # Configure logging

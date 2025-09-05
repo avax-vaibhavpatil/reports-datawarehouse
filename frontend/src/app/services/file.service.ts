@@ -130,4 +130,17 @@ export class FileService {
   getMultipleFilesData(request: MultipleFilesDataRequest): Observable<MultipleFilesDataResponse> {
     return this.http.post<MultipleFilesDataResponse>(`${this.apiUrl}/data/multiple`, request);
   }
+
+  /**
+   * Get joined data from multiple files
+   */
+  getJoinedData(filenames: string[], joinConditions: any[], selectedColumns: string[] = [], sampleSize: number = 100): Observable<any> {
+    const request = {
+      filenames: filenames,
+      join_conditions: joinConditions,
+      selected_columns: selectedColumns,
+      sample_size: sampleSize
+    };
+    return this.http.post(`${this.apiUrl}/data/joined`, request);
+  }
 } 

@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from typing import List, Dict
 import logging
-from services.relationship_service import RelationshipService
-from services.file_service import FileService
+from ..services.relationship_service import RelationshipService
+from ..services.file_service import FileService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

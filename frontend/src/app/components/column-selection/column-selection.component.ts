@@ -82,7 +82,6 @@ import { FileService } from '../../services/file.service';
                   [checked]="isColumnSelected(file.filename, column)"
                   (change)="onColumnSelectionChange(file.filename, column, $event.checked)">
                   <span class="column-name">{{ column }}</span>
-                  <span class="column-notation">{{ file.filename }}.{{ column }}</span>
                 </mat-checkbox>
               </div>
             </div>
@@ -224,14 +223,144 @@ import { FileService } from '../../services/file.service';
         </mat-card-content>
       </mat-card>
 
+      <!-- Composite Key Relationships Section -->
+      <mat-card class="composite-relationships-card">
+        <mat-card-header>
+          <mat-card-title>🔗 Create Composite Key Relationships</mat-card-title>
+          <mat-card-subtitle>
+            Create relationships using multiple columns (like your SQL example with 3 columns)
+          </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="composite-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Table 1:</label>
+                <select [(ngModel)]="compositeRelationship.table1" (change)="onCompositeTable1Change()">
+                  <option value="">Select First Table</option>
+                  <option *ngFor="let file of filesMetadata" [value]="file.filename">
+                    {{ file.filename }}
+                  </option>
+                </select>
+              </div>
+              
+              <div class="form-group">
+                <label>Table 2:</label>
+                <select [(ngModel)]="compositeRelationship.table2" (change)="onCompositeTable2Change()">
+                  <option value="">Select Second Table</option>
+                  <option *ngFor="let file of filesMetadata" [value]="file.filename">
+                    {{ file.filename }}
+                  </option>
+                </select>
+              </div>
+            </div>
+            
+            <!-- Column Pairs -->
+            <div class="column-pairs-section" *ngIf="compositeRelationship.table1 && compositeRelationship.table2">
+              <h4>Column Pairs (Add at least 2 pairs):</h4>
+              <div class="column-pair" *ngFor="let pair of compositeRelationship.columnPairs; let i = index">
+                <div class="pair-row">
+                  <div class="column-selector">
+                    <label>{{ compositeRelationship.table1 }} Column:</label>
+                    <select [(ngModel)]="pair.table1_col" (change)="updateCompositeDescription()">
+                      <option value="">Select Column</option>
+                      <option *ngFor="let column of getCompositeTable1Columns()" [value]="column">
+                        {{ column }}
+                      </option>
+                    </select>
+                  </div>
+                  
+                  <span class="equals-sign">=</span>
+                  
+                  <div class="column-selector">
+                    <label>{{ compositeRelationship.table2 }} Column:</label>
+                    <select [(ngModel)]="pair.table2_col" (change)="updateCompositeDescription()">
+                      <option value="">Select Column</option>
+                      <option *ngFor="let column of getCompositeTable2Columns()" [value]="column">
+                        {{ column }}
+                      </option>
+                    </select>
+                  </div>
+                  
+                  <button mat-icon-button color="warn" (click)="removeColumnPair(i)" class="remove-pair-btn">
+                    <mat-icon>remove_circle</mat-icon>
+                  </button>
+                </div>
+              </div>
+              
+              <button mat-stroked-button (click)="addColumnPair()" class="add-pair-btn">
+                <mat-icon>add</mat-icon>
+                Add Column Pair
+              </button>
+            </div>
+            
+            <!-- Description -->
+            <div class="form-group" *ngIf="compositeRelationship.columnPairs.length > 0">
+              <label>Description:</label>
+              <input type="text" [(ngModel)]="compositeRelationship.description" 
+                     placeholder="e.g., Composite join on voucher_no, siscon_code, and branch_code"
+                     readonly>
+            </div>
+            
+            <div class="form-actions">
+              <button 
+                mat-raised-button 
+                color="accent" 
+                (click)="createCompositeRelationship()"
+                [disabled]="!isCompositeRelationshipValid()"
+                class="create-composite-btn">
+                <mat-icon>🔗</mat-icon>
+                Create Composite Relationship
+              </button>
+            </div>
+          </div>
+          
+          <!-- Composite Relationships List -->
+          <div class="composite-relationships-list" *ngIf="compositeRelationships.length > 0">
+            <h4>Composite Relationships Created:</h4>
+            <div class="composite-relationship-item" *ngFor="let rel of compositeRelationships; let i = index">
+              <div class="composite-relationship-content">
+                <span class="relationship-tables">{{ rel.table1 }} ↔ {{ rel.table2 }}</span>
+                <span class="relationship-count">({{ rel.mapping_count }} columns)</span>
+              </div>
+              <div class="relationship-description">{{ rel.description }}</div>
+              <div class="column-pairs-display">
+                <div class="pair-display" *ngFor="let pair of rel.column_pairs">
+                  <span class="pair-text">{{ rel.table1 }}.{{ pair.table1_col }} = {{ rel.table2 }}.{{ pair.table2_col }}</span>
+                </div>
+              </div>
+              <div class="relationship-actions">
+                <button mat-icon-button color="warn" (click)="deleteCompositeRelationship(rel.id)" class="delete-btn">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
       <!-- Combined Table Structure -->
       <mat-card class="combined-table-card" *ngIf="combinedTableStructure">
         <mat-card-header>
           <mat-card-title>📊 New Combined Table Structure</mat-card-title>
         </mat-card-header>
         <mat-card-content>
+          <!-- Custom Table Name Input -->
+          <div class="custom-table-name-section" style="margin-bottom: 20px;">
+            <mat-form-field appearance="outline" class="table-name-field">
+              <mat-label>Custom Table Name</mat-label>
+              <input 
+                matInput 
+                [(ngModel)]="customTableName" 
+                (ngModelChange)="onTableNameChange()"
+                placeholder="Enter table name"
+                maxlength="50">
+              <mat-hint>Give your combined table a custom name</mat-hint>
+            </mat-form-field>
+          </div>
+          
           <div class="table-info">
-            <p><strong>Table Name:</strong> {{ combinedTableStructure.table_name }}</p>
+            <p><strong>Table Name:</strong> {{ customTableName || combinedTableStructure.table_name }}</p>
             <p><strong>Source Tables:</strong> {{ combinedTableStructure.source_tables?.join(', ') || 'None' }}</p>
             <p><strong>Total Columns:</strong> {{ combinedTableStructure.column_count }}</p>
           </div>
@@ -358,7 +487,7 @@ import { FileService } from '../../services/file.service';
       <!-- Actual Data Table Display -->
       <mat-card class="actual-data-table-card" *ngIf="showActualDataTable">
         <mat-card-header>
-          <mat-card-title>📊 Actual Data from Selected Columns</mat-card-title>
+          <mat-card-title>📊 Data from "{{ customTableName || 'Combined Table' }}"</mat-card-title>
           <mat-card-subtitle>
             Real data values from your selected columns across all tables
           </mat-card-subtitle>
@@ -376,6 +505,7 @@ import { FileService } from '../../services/file.service';
               <span><strong>Total Rows:</strong> {{ actualDataTableData.length }}</span>
               <span><strong>Total Columns:</strong> {{ actualDataTableColumns.length }}</span>
               <span><strong>Source Tables:</strong> {{ getUniqueSourceTablesFromData().length }}</span>
+              <span class="scroll-hint">📜 Scroll to see more data</span>
             </div>
             
             <div class="table-container">
@@ -397,8 +527,12 @@ import { FileService } from '../../services/file.service';
             
             <!-- Data Summary -->
             <div class="data-summary" style="margin-top: 20px; padding: 15px; background: #f0f8ff; border-radius: 4px;">
-              <h4>Data Summary:</h4>
+              <h4>Data Summary for "{{ customTableName || 'Combined Table' }}":</h4>
               <div class="summary-grid">
+                <div class="summary-item">
+                  <span class="summary-label">Table Name:</span>
+                  <span class="summary-value">{{ customTableName || 'combined_table' }}</span>
+                </div>
                 <div class="summary-item">
                   <span class="summary-label">Data Rows:</span>
                   <span class="summary-value">{{ actualDataTableData.length }}</span>
@@ -545,13 +679,6 @@ import { FileService } from '../../services/file.service';
     .column-name {
       font-weight: bold;
       color: #333;
-      margin-right: 10px;
-    }
-
-    .column-notation {
-      font-size: 11px;
-      color: #666;
-      font-family: 'Courier New', monospace;
     }
 
     .mappings-list {
@@ -699,8 +826,31 @@ import { FileService } from '../../services/file.service';
     }
 
     .table-container {
-      overflow-x: auto;
+      overflow: auto;
       margin-top: 20px;
+      max-height: 500px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .table-container::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    .table-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+
+    .table-container::-webkit-scrollbar-thumb:hover {
+      background: #555;
     }
 
     .created-columns-table {
@@ -723,6 +873,82 @@ import { FileService } from '../../services/file.service';
 
     .created-columns-table tr:hover {
       background: #f9f9f9;
+    }
+
+    .actual-data-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 600px;
+    }
+
+    .actual-data-table th,
+    .actual-data-table td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+      white-space: nowrap;
+    }
+
+    .actual-data-table th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: #333;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .actual-data-table tr:hover {
+      background: #f9f9f9;
+    }
+
+    .data-cell {
+      display: inline-block;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .data-cell.null-value {
+      color: #999;
+      font-style: italic;
+    }
+
+    .table-info-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      padding: 10px 15px;
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+
+    .table-info-bar span {
+      font-size: 14px;
+    }
+
+    .scroll-hint {
+      color: #666;
+      font-style: italic;
+      margin-left: auto;
+    }
+
+    .custom-table-name-section {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+
+    .table-name-field {
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .table-name-field .mat-form-field-wrapper {
+      padding-bottom: 0;
     }
 
     .remove-btn {
@@ -970,6 +1196,154 @@ import { FileService } from '../../services/file.service';
       color: #888;
       margin-bottom: 10px;
     }
+
+    /* Composite Relationship Styles */
+    .composite-relationships-card {
+      margin-top: 20px;
+    }
+
+    .composite-form {
+      padding: 20px 0;
+    }
+
+    .column-pairs-section {
+      margin-top: 20px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border: 1px solid #e9ecef;
+    }
+
+    .column-pairs-section h4 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    .column-pair {
+      margin-bottom: 15px;
+      padding: 15px;
+      background: white;
+      border-radius: 6px;
+      border: 1px solid #dee2e6;
+    }
+
+    .pair-row {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      flex-wrap: wrap;
+    }
+
+    .column-selector {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .column-selector label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #555;
+      font-size: 14px;
+    }
+
+    .column-selector select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .equals-sign {
+      font-size: 18px;
+      font-weight: bold;
+      color: #666;
+      margin: 0 10px;
+    }
+
+    .remove-pair-btn {
+      color: #dc3545;
+      margin-left: 10px;
+    }
+
+    .add-pair-btn {
+      margin-top: 15px;
+      border: 2px dashed #007bff;
+      color: #007bff;
+      background: transparent;
+    }
+
+    .add-pair-btn:hover {
+      background: #e3f2fd;
+    }
+
+    .create-composite-btn {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 16px;
+    }
+
+    .composite-relationships-list {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #eee;
+    }
+
+    .composite-relationships-list h4 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+
+    .composite-relationship-item {
+      background: #f0f8ff;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      border-left: 4px solid #007bff;
+    }
+
+    .composite-relationship-content {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .relationship-tables {
+      background: #e3f2fd;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .relationship-count {
+      background: #f0f0f0;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .column-pairs-display {
+      margin: 10px 0;
+    }
+
+    .pair-display {
+      margin: 5px 0;
+      padding: 8px 12px;
+      background: white;
+      border-radius: 4px;
+      border: 1px solid #e9ecef;
+    }
+
+    .pair-text {
+      font-family: monospace;
+      font-size: 13px;
+      color: #495057;
+    }
   `]
 })
 export class ColumnSelectionComponent implements OnInit {
@@ -990,6 +1364,16 @@ export class ColumnSelectionComponent implements OnInit {
   
   manualRelationships: any[] = [];
   
+  // Composite relationship properties
+  compositeRelationship = {
+    table1: '',
+    table2: '',
+    columnPairs: [] as any[],
+    description: ''
+  };
+  
+  compositeRelationships: any[] = [];
+  
   // Track deleted detected relationships
   deletedDetectedRelationships: Set<string> = new Set();
   
@@ -1003,6 +1387,9 @@ export class ColumnSelectionComponent implements OnInit {
   actualDataTableData: any[] = [];
   actualDataTableColumns: string[] = [];
   isLoadingData = false;
+  
+  // Custom table name
+  customTableName = 'combined_table';
 
   constructor(
     private columnMappingService: ColumnMappingService,
@@ -1011,8 +1398,20 @@ export class ColumnSelectionComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    // Ensure compositeRelationships is initialized
+    if (!this.compositeRelationships) {
+      this.compositeRelationships = [];
+    }
+    
     this.loadFilesMetadata();
     this.refreshData();
+  }
+
+  onTableNameChange(): void {
+    // Update the combined table structure with the new name
+    if (this.combinedTableStructure) {
+      this.combinedTableStructure.table_name = this.customTableName;
+    }
   }
 
   loadFilesMetadata(): void {
@@ -1189,6 +1588,116 @@ export class ColumnSelectionComponent implements OnInit {
     this.snackBar.open('Manual relationship deleted!', 'Close', { duration: 2000 });
   }
 
+  // Composite relationship methods
+  onCompositeTable1Change(): void {
+    this.compositeRelationship.columnPairs = [];
+    this.compositeRelationship.description = '';
+  }
+
+  onCompositeTable2Change(): void {
+    this.compositeRelationship.columnPairs = [];
+    this.compositeRelationship.description = '';
+  }
+
+  getCompositeTable1Columns(): string[] {
+    if (!this.compositeRelationship.table1) return [];
+    const file = this.filesMetadata.find(f => f.filename === this.compositeRelationship.table1);
+    return file ? file.columns || [] : [];
+  }
+
+  getCompositeTable2Columns(): string[] {
+    if (!this.compositeRelationship.table2) return [];
+    const file = this.filesMetadata.find(f => f.filename === this.compositeRelationship.table2);
+    return file ? file.columns || [] : [];
+  }
+
+  addColumnPair(): void {
+    this.compositeRelationship.columnPairs.push({
+      table1_col: '',
+      table2_col: ''
+    });
+  }
+
+  removeColumnPair(index: number): void {
+    this.compositeRelationship.columnPairs.splice(index, 1);
+    this.updateCompositeDescription();
+  }
+
+  updateCompositeDescription(): void {
+    const validPairs = this.compositeRelationship.columnPairs.filter(pair => 
+      pair.table1_col && pair.table2_col
+    );
+    
+    if (validPairs.length > 0) {
+      const pairDescriptions = validPairs.map(pair => 
+        `${this.compositeRelationship.table1}.${pair.table1_col} = ${this.compositeRelationship.table2}.${pair.table2_col}`
+      );
+      this.compositeRelationship.description = `Composite join: ${pairDescriptions.join(' AND ')}`;
+    } else {
+      this.compositeRelationship.description = '';
+    }
+  }
+
+  isCompositeRelationshipValid(): boolean {
+    return !!(
+      this.compositeRelationship.table1 &&
+      this.compositeRelationship.table2 &&
+      this.compositeRelationship.table1 !== this.compositeRelationship.table2 &&
+      this.compositeRelationship.columnPairs.length >= 2 &&
+      this.compositeRelationship.columnPairs.every(pair => pair.table1_col && pair.table2_col)
+    );
+  }
+
+  createCompositeRelationship(): void {
+    if (!this.isCompositeRelationshipValid()) return;
+
+    const columnPairs = this.compositeRelationship.columnPairs.map(pair => ({
+      table1_col: pair.table1_col,
+      table2_col: pair.table2_col
+    }));
+
+    this.columnMappingService.createCompositeRelationship(
+      this.compositeRelationship.table1,
+      this.compositeRelationship.table2,
+      columnPairs
+    ).subscribe({
+      next: (response) => {
+        // Add to local array for display
+        const newRelationship = {
+          id: `composite_${Date.now()}`,
+          table1: this.compositeRelationship.table1,
+          table2: this.compositeRelationship.table2,
+          column_pairs: columnPairs,
+          mapping_count: columnPairs.length,
+          description: this.compositeRelationship.description,
+          type: 'composite_relationship'
+        };
+
+        this.compositeRelationships.push(newRelationship);
+        
+        // Reset form
+        this.compositeRelationship = {
+          table1: '',
+          table2: '',
+          columnPairs: [],
+          description: ''
+        };
+
+        this.snackBar.open('Composite relationship created successfully!', 'Close', { duration: 3000 });
+        this.refreshData();
+      },
+      error: (error) => {
+        console.error('Error creating composite relationship:', error);
+        this.snackBar.open('Error creating composite relationship', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  deleteCompositeRelationship(relationshipId: string): void {
+    this.compositeRelationships = this.compositeRelationships.filter(r => r.id !== relationshipId);
+    this.snackBar.open('Composite relationship deleted!', 'Close', { duration: 2000 });
+  }
+
   deleteDetectedRelationship(index: number): void {
     if (this.columnMappingsSummary && this.columnMappingsSummary.mappings) {
       const relationship = this.columnMappingsSummary.mappings[index];
@@ -1316,29 +1825,127 @@ export class ColumnSelectionComponent implements OnInit {
   displayActualData(): void {
     this.showActualDataTable = true;
     this.isLoadingData = true;
-    this.fetchActualDataFromFiles();
+    
+    // Get the list of files that have selected columns
+    const filesWithColumns = this.getFilesWithSelectedColumns();
+    console.log('Files with selected columns:', filesWithColumns);
+    console.log('Composite relationships:', this.compositeRelationships);
+    
+    this.fetchActualDataFromFiles(filesWithColumns);
   }
 
-  fetchActualDataFromFiles(): void {
+  getFilesWithSelectedColumns(): string[] {
     if (!this.selectedColumnsSummary || !this.selectedColumnsSummary.tables) {
-      this.isLoadingData = false;
-      return;
+      return [];
     }
-
-    // Get the list of files that have selected columns
-    const filesWithColumns = this.selectedColumnsSummary.tables
+    
+    return this.selectedColumnsSummary.tables
       .filter(table => table.selected_columns.length > 0)
       .map(table => table.table_name);
+  }
 
-    if (filesWithColumns.length === 0) {
+  getSelectedColumnsList(): string[] {
+    if (!this.selectedColumnsSummary || !this.selectedColumnsSummary.tables) {
+      return [];
+    }
+    
+    const selectedColumns: string[] = [];
+    this.selectedColumnsSummary.tables.forEach(table => {
+      table.selected_columns.forEach(col => {
+        // col is already a string (column name), not an object
+        selectedColumns.push(col);
+      });
+    });
+    
+    return selectedColumns;
+  }
+
+  fetchActualDataFromFiles(filesWithColumns: string[]): void {
+    if (!filesWithColumns || filesWithColumns.length === 0) {
       this.isLoadingData = false;
       return;
     }
 
+    // Check if we have composite relationships that should be used for joining
+    if (this.compositeRelationships && 
+        Array.isArray(this.compositeRelationships) && 
+        this.compositeRelationships.length > 0 && 
+        filesWithColumns.length >= 2) {
+      // Use joined data if we have composite relationships
+      console.log('Using joined data approach');
+      this.fetchJoinedData(filesWithColumns);
+    } else {
+      // Use regular multiple files data
+      console.log('Using regular data approach');
+      this.fetchRegularData(filesWithColumns);
+    }
+  }
+
+  fetchJoinedData(filesWithColumns: string[]): void {
+    // Check if composite relationships exist
+    if (!this.compositeRelationships || this.compositeRelationships.length === 0) {
+      console.warn('No composite relationships found, falling back to regular data');
+      this.fetchRegularData(filesWithColumns);
+      return;
+    }
+
+    // Convert composite relationships to join conditions
+    console.log('Raw composite relationships:', this.compositeRelationships);
+    
+    const joinConditions = this.compositeRelationships.map(rel => {
+      console.log('Processing relationship:', rel);
+      const columnPairs = rel.column_pairs || rel.columnPairs; // Handle both formats
+      if (!columnPairs || !Array.isArray(columnPairs)) {
+        console.warn('Invalid column pairs in relationship:', rel);
+        return [];
+      }
+      const conditions = columnPairs.map((pair: any) => ({
+        table1: rel.table1,
+        column1: pair.table1_col,
+        table2: rel.table2,
+        column2: pair.table2_col
+      }));
+      
+      // Filter out voucher_no join if it exists, as it's too strict
+      const filteredConditions = conditions.filter(cond => 
+        !cond.column1.includes('voucher_no') && !cond.column2.includes('voucher_no')
+      );
+      
+      console.log('Filtered out voucher_no conditions:', filteredConditions);
+      return filteredConditions;
+    }).flat();
+
+    console.log('Final join conditions:', joinConditions);
+
+    // Get selected columns for filtering
+    const selectedColumns = this.getSelectedColumnsList();
+    console.log('Selected columns for filtering:', selectedColumns);
+    
+    // Limit to 20 rows to prevent loading issues
+    this.fileService.getJoinedData(filesWithColumns, joinConditions, selectedColumns, 20).subscribe({
+      next: (response) => {
+        console.log('Joined data received:', response);
+        if (response.total_rows === 0) {
+          console.warn('No data from join, falling back to regular data');
+          this.fetchRegularData(filesWithColumns);
+          return;
+        }
+        this.processJoinedDataFromBackend(response);
+        this.isLoadingData = false;
+      },
+      error: (error) => {
+        console.error('Error fetching joined data:', error);
+        console.warn('Join failed, falling back to regular data');
+        this.fetchRegularData(filesWithColumns);
+      }
+    });
+  }
+
+  fetchRegularData(filesWithColumns: string[]): void {
     // Call the backend API to get real data
     const request = {
       filenames: filesWithColumns,
-      sample_size: 10 // Get 10 rows from each file
+      sample_size: 20 // Get 20 rows from each file
     };
 
     this.fileService.getMultipleFilesData(request).subscribe({
@@ -1476,6 +2083,23 @@ export class ColumnSelectionComponent implements OnInit {
 
     console.log('Processed real data:', this.actualDataTableData);
     console.log('Columns:', this.actualDataTableColumns);
+  }
+
+  processJoinedDataFromBackend(response: any): void {
+    this.actualDataTableData = [];
+    this.actualDataTableColumns = [];
+
+    // Use the joined data directly
+    if (response.joined_data && response.joined_data.length > 0) {
+      this.actualDataTableData = response.joined_data;
+      this.actualDataTableColumns = response.columns || [];
+      
+      console.log('Processed joined data:', this.actualDataTableData);
+      console.log('Joined columns:', this.actualDataTableColumns);
+      console.log('Join conditions used:', response.join_conditions);
+    } else {
+      console.log('No joined data received');
+    }
   }
 
   /**

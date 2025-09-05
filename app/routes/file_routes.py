@@ -1,9 +1,9 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
-from typing import List
+from typing import List, Dict
 from pydantic import BaseModel
 import logging
-from services.file_service import FileService
+from ..services.file_service import FileService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -125,19 +125,20 @@ async def get_file_data(
     logger.info(f"Data request received for file: {filename}, sample size: {sample_size}")
     
     try:
-        data = file_service.read_file_data(filename, sample_size)
+        result = file_service.read_file_data(filename, sample_size)
         
-        if data is None:
-            raise HTTPException(status_code=404, detail=f"File not found or could not be read: {filename}")
+        if result is None or "error" in result:
+            error_msg = result.get("error", f"File not found or could not be read: {filename}") if result else f"File not found or could not be read: {filename}"
+            raise HTTPException(status_code=404, detail=error_msg)
         
         response = {
             "filename": filename,
             "sample_size": sample_size,
-            "total_rows": len(data),
-            "data": data
+            "total_rows": result.get("total_rows", 0),
+            "data": result.get("data", [])
         }
         
-        logger.info(f"Data response for {filename}: {len(data)} rows")
+        logger.info(f"Data response for {filename}: {result.get('total_rows', 0)} rows")
         return response
         
     except HTTPException:
@@ -172,6 +173,45 @@ async def get_multiple_files_data(
     except Exception as e:
         logger.error(f"Error retrieving multiple files data: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve multiple files data")
+
+class JoinedDataRequest(BaseModel):
+    filenames: List[str]
+    join_conditions: List[Dict[str, str]]
+    selected_columns: List[str] = []  # Only return these columns
+    sample_size: int = 100
+
+@router.post("/data/joined")
+async def get_joined_data(
+    request: JoinedDataRequest,
+    file_service: FileService = Depends(get_file_service)
+):
+    """
+    Get joined data from multiple Excel/CSV files based on join conditions
+    """
+    logger.info(f"Joined data request received for {len(request.filenames)} files with {len(request.join_conditions)} join conditions")
+    
+    try:
+        result = file_service.get_joined_data(request.filenames, request.join_conditions, request.selected_columns, request.sample_size)
+        
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        
+        response = {
+            "sample_size": request.sample_size,
+            "joined_data": result["data"],
+            "total_rows": result["total_rows"],
+            "columns": result["columns"],
+            "join_conditions": result["join_conditions"]
+        }
+        
+        logger.info(f"Joined data response: {result['total_rows']} rows with {len(result['columns'])} columns")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving joined data: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve joined data")
 
 @router.get("/health")
 async def health_check():

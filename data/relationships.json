@@ -28003,8 +28003,20 @@
       "source": "automatic",
       "created_at": "2025-08-30T13:37:13.631260",
       "id": "auto_20250830_133713_1866"
+    },
+    {
+      "id": "manual_20250901_165127_1867",
+      "source_table": "customers.xlsx",
+      "source_column": "customer_id",
+      "target_table": "orders.xlsx",
+      "target_column": "customer_id",
+      "relationship_type": "one_to_many",
+      "strength": "Manual",
+      "confidence": 100,
+      "description": "Customer to Orders relationship",
+      "source": "manual",
+      "created_at": "2025-09-01T16:51:27.808210",
+      "notes": ""
     }
-  ],
-  "last_updated": "2025-08-30T13:37:13.631294",
-  "version": "1.0"
+  ]
 }

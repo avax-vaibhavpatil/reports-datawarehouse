@@ -3,11 +3,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict
 import logging
-from services.column_mapping_service import ColumnMappingService
+from ..services.column_mapping_service import ColumnMappingService
 
 class ColumnSelectionRequest(BaseModel):
     table_name: str
     columns: List[str]
+
+class CompositeRelationshipRequest(BaseModel):
+    table1: str
+    table2: str
+    column_pairs: List[Dict[str, str]]  # [{"table1_col": "ins_voucher_no", "table2_col": "lg_voucher_no"}]
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -96,6 +101,25 @@ async def clear_all_selections(
         return JSONResponse(content=result, status_code=200)
     except Exception as e:
         logger.error(f"Error clearing selections: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/create-composite-relationship")
+async def create_composite_relationship(
+    request: CompositeRelationshipRequest,
+    service: ColumnMappingService = Depends(get_column_mapping_service)
+):
+    """Create a composite key relationship between two tables"""
+    logger.info(f"Creating composite relationship between {request.table1} and {request.table2}")
+    
+    try:
+        result = service.create_composite_relationship(
+            request.table1, 
+            request.table2, 
+            request.column_pairs
+        )
+        return JSONResponse(content=result, status_code=200)
+    except Exception as e:
+        logger.error(f"Error creating composite relationship: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/health")
