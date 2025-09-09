@@ -22,7 +22,7 @@ class ColumnMappingService:
             all_columns = list(existing_columns.union(new_columns))
             self.selected_columns[table_name] = all_columns
             self.logger.info(f"Added columns to {table_name}: {columns}. Total: {all_columns}")
-        else:
+        else:   
             # New table selection
             self.selected_columns[table_name] = columns
             self.logger.info(f"Selected columns from {table_name}: {columns}")
