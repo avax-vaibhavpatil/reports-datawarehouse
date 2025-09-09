@@ -432,6 +432,53 @@ import { FileService } from '../../services/file.service';
                </div>
              </div>
              
+             <!-- Matching Tables Display -->
+             <div *ngIf="selectedColumnsFromDropdown.length > 0 && matchingTables.length > 0" class="matching-tables-section">
+               <h4 style="margin: 20px 0 15px 0; color: #333;">
+                 <mat-icon style="vertical-align: middle; margin-right: 8px;">link</mat-icon>
+                 Tables with Matching Columns ({{ matchingTables.length }} found)
+               </h4>
+               
+               <div class="matching-tables-list">
+                 <div *ngFor="let matchTable of matchingTables" class="matching-table-item">
+                   <div class="table-header-info">
+                     <div class="table-name-info">
+                       <mat-icon class="table-icon">table_view</mat-icon>
+                       <span class="table-name">{{ matchTable.fileName }}</span>
+                       <span class="match-count">{{ matchTable.matchingColumns.length }} matches</span>
+                     </div>
+                   </div>
+                   
+                   <div class="matching-columns-display">
+                     <div class="column-matches">
+                       <div *ngFor="let column of matchTable.matchingColumns; let i = index" class="column-match-item">
+                         <div class="original-column">
+                           <mat-icon class="column-icon">table_chart</mat-icon>
+                           {{ column }}
+                         </div>
+                         <mat-icon class="arrow-icon">arrow_right_alt</mat-icon>
+                         <div class="base-column">
+                           <mat-icon class="base-icon">label</mat-icon>
+                           {{ matchTable.baseColumns[i] }}
+                         </div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+               
+               <div class="matching-summary">
+                 <mat-icon style="color: #4caf50;">check_circle</mat-icon>
+                 <span>Found {{ matchingTables.length }} tables with columns that match your selection</span>
+               </div>
+             </div>
+             
+             <!-- No Matching Tables Message -->
+             <div *ngIf="selectedColumnsFromDropdown.length > 0 && matchingTables.length === 0" class="no-matches-message">
+               <mat-icon style="color: #ff9800;">search_off</mat-icon>
+               <span>No other tables found with matching base column names</span>
+             </div>
+             
              <!-- No Columns Message -->
              <div *ngIf="selectedDropdownTable && selectedTableColumns.length === 0" class="no-columns-message">
                <mat-icon style="color: #666;">info_outline</mat-icon>
@@ -942,6 +989,128 @@ import { FileService } from '../../services/file.service';
       border-radius: 4px;
       color: #666;
       justify-content: center;
+    }
+
+    .matching-tables-section {
+      margin-top: 30px;
+      padding: 20px;
+      border: 2px solid #2196f3;
+      border-radius: 8px;
+      background: #f3f8ff;
+    }
+
+    .matching-tables-list {
+      margin-bottom: 15px;
+    }
+
+    .matching-table-item {
+      margin-bottom: 15px;
+      padding: 15px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e0e7ff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .table-header-info {
+      margin-bottom: 10px;
+    }
+
+    .table-name-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .table-icon {
+      color: #2196f3;
+      font-size: 20px !important;
+    }
+
+    .table-name {
+      font-weight: 500;
+      color: #333;
+      font-size: 14px;
+    }
+
+    .match-count {
+      background: #2196f3;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .column-matches {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .column-match-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: #f8f9ff;
+      border-radius: 6px;
+      border: 1px solid #e3f2fd;
+    }
+
+    .original-column, .base-column {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .original-column {
+      background: #e3f2fd;
+      color: #1976d2;
+      border: 1px solid #bbdefb;
+    }
+
+    .base-column {
+      background: #e8f5e8;
+      color: #388e3c;
+      border: 1px solid #c8e6c9;
+    }
+
+    .arrow-icon {
+      color: #666;
+      font-size: 18px !important;
+    }
+
+    .column-icon, .base-icon {
+      font-size: 14px !important;
+    }
+
+    .matching-summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      background: #e8f5e8;
+      border-radius: 6px;
+      color: #2e7d32;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .no-matches-message {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding: 15px;
+      background: #fff3e0;
+      border-radius: 4px;
+      color: #f57c00;
+      justify-content: center;
+      border: 1px solid #ffcc02;
     }
 
     .table-selection {
@@ -1706,6 +1875,9 @@ export class ColumnSelectionComponent implements OnInit {
   // Selected columns from the dropdown table
   selectedColumnsFromDropdown: string[] = [];
   
+  // Matching tables based on selected columns
+  matchingTables: { tableName: string, fileName: string, matchingColumns: string[], baseColumns: string[] }[] = [];
+  
   // Real table name options (populated from actual uploaded files)
   realTableNames: { value: string, label: string }[] = [];
 
@@ -1790,6 +1962,9 @@ export class ColumnSelectionComponent implements OnInit {
       }
     }
     console.log('Selected columns from dropdown:', this.selectedColumnsFromDropdown);
+    
+    // Find matching tables whenever selection changes
+    this.findMatchingTables();
   }
 
   toggleColumn(column: string): void {
@@ -1804,7 +1979,68 @@ export class ColumnSelectionComponent implements OnInit {
 
   selectNoColumns(): void {
     this.selectedColumnsFromDropdown = [];
+    this.matchingTables = [];
     console.log('All columns deselected');
+  }
+
+  extractBaseColumnName(columnName: string): string {
+    // Split at first underscore and return the part after it
+    const firstUnderscoreIndex = columnName.indexOf('_');
+    if (firstUnderscoreIndex > 0) {
+      return columnName.substring(firstUnderscoreIndex + 1);
+    }
+    return columnName; // If no underscore, return original
+  }
+
+  findMatchingTables(): void {
+    if (this.selectedColumnsFromDropdown.length === 0) {
+      this.matchingTables = [];
+      return;
+    }
+
+    // Extract base column names from selected columns
+    const selectedBaseColumns = this.selectedColumnsFromDropdown.map(col => this.extractBaseColumnName(col));
+    console.log('Selected base columns:', selectedBaseColumns);
+
+    this.matchingTables = [];
+
+    // Check each file for matching base columns
+    this.filesMetadata.forEach(file => {
+      if (!file.columns) return;
+
+      const matchingColumns: string[] = [];
+      const baseColumns: string[] = [];
+
+      // Check each column in the file
+      file.columns.forEach((column: string) => {
+        const baseColumn = this.extractBaseColumnName(column);
+        
+        // If this base column matches any of our selected base columns
+        if (selectedBaseColumns.includes(baseColumn)) {
+          matchingColumns.push(column);
+          baseColumns.push(baseColumn);
+        }
+      });
+
+      // If we found matching columns, add this table to results
+      if (matchingColumns.length > 0) {
+        const tableName = file.filename
+          .replace(/\.(xlsx|xls|csv)$/i, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+
+        this.matchingTables.push({
+          tableName: tableName,
+          fileName: file.filename,
+          matchingColumns: matchingColumns,
+          baseColumns: baseColumns
+        });
+      }
+    });
+
+    console.log('Matching tables found:', this.matchingTables);
   }
 
 
