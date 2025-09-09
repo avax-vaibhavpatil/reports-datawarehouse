@@ -339,6 +339,108 @@ import { FileService } from '../../services/file.service';
         </mat-card-content>
       </mat-card>
 
+      <!-- Table Name Selection Container -->
+      <mat-card class="table-name-selection-card">
+        <mat-card-header>
+          <mat-card-title>🏷️ Select Table Name</mat-card-title>
+          <mat-card-subtitle>
+            Browse available table names - completely independent feature
+          </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="table-name-selection-content">
+            <mat-form-field appearance="outline" class="table-name-dropdown">
+              <mat-label>Table Name</mat-label>
+              <mat-select 
+                [(ngModel)]="selectedDropdownTable" 
+                (ngModelChange)="onDropdownTableSelect($event)"
+                placeholder="Choose a table name">
+                <mat-option *ngFor="let option of realTableNames" [value]="option.value">
+                  {{ option.label }}
+                </mat-option>
+              </mat-select>
+              <mat-hint>Browse your uploaded files and available table options</mat-hint>
+            </mat-form-field>
+            
+            <!-- Status indicators -->
+            <div class="table-name-status">
+                                                           <div *ngIf="!selectedDropdownTable" class="info-message">
+                 <mat-icon class="info-icon">info</mat-icon>
+                 <span>Available table names from your uploaded files</span>
+               </div>
+             </div>
+             
+             <!-- Columns Display Section -->
+             <div *ngIf="selectedDropdownTable && selectedTableColumns.length > 0" class="columns-display-section">
+               <h4 style="margin: 20px 0 10px 0; color: #333;">
+                 <mat-icon style="vertical-align: middle; margin-right: 8px;">view_column</mat-icon>
+                 Columns in Selected Table
+               </h4>
+               
+               <div class="columns-dropdown-container">
+                 <mat-form-field appearance="outline" style="width: 100%; max-width: 400px;">
+                   <mat-label>Browse Columns ({{ selectedTableColumns.length }} total)</mat-label>
+                   <mat-select placeholder="Select a column to view">
+                     <mat-option *ngFor="let column of selectedTableColumns; let i = index" [value]="column">
+                       <span class="column-option">
+                         <mat-icon class="column-icon">table_chart</mat-icon>
+                         <span class="column-name">{{ column }}</span>
+                         <span class="column-index">#{{ i + 1 }}</span>
+                       </span>
+                     </mat-option>
+                   </mat-select>
+                   <mat-hint>Browse through all columns in the selected table</mat-hint>
+                 </mat-form-field>
+               </div>
+               
+               <!-- Select All/None Controls -->
+               <div class="column-selection-controls">
+                 <button mat-stroked-button color="primary" (click)="selectAllColumns()" class="control-btn">
+                   <mat-icon>select_all</mat-icon>
+                   Select All ({{ selectedTableColumns.length }})
+                 </button>
+                 <button mat-stroked-button color="warn" (click)="selectNoColumns()" class="control-btn">
+                   <mat-icon>deselect</mat-icon>
+                   Clear All
+                 </button>
+                 <span class="selected-count">
+                   Selected: {{ selectedColumnsFromDropdown.length }} / {{ selectedTableColumns.length }}
+                 </span>
+               </div>
+               
+               <!-- Columns Grid Display with Checkboxes -->
+               <div class="columns-grid-view">
+                 <div class="column-chip-container">
+                   <div *ngFor="let column of selectedTableColumns; let i = index" 
+                        class="column-selection-item"
+                        [class.selected]="isColumnSelectedFromDropdown(column)">
+                     <mat-checkbox 
+                       [checked]="isColumnSelectedFromDropdown(column)"
+                       (change)="onColumnToggle(column, $event.checked)"
+                       class="column-checkbox">
+                     </mat-checkbox>
+                     <div class="column-display-chip"
+                          [style.background-color]="getColumnColor(i)"
+                          [class.selected-chip]="isColumnSelectedFromDropdown(column)"
+                          (click)="toggleColumn(column)">
+                       <mat-icon class="chip-icon">table_chart</mat-icon>
+                       {{ column }}
+                       <span class="chip-number">{{ i + 1 }}</span>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             </div>
+             
+             <!-- No Columns Message -->
+             <div *ngIf="selectedDropdownTable && selectedTableColumns.length === 0" class="no-columns-message">
+               <mat-icon style="color: #666;">info_outline</mat-icon>
+               <span>This is a combined table option - no specific columns available</span>
+             </div>
+           </div>
+         </mat-card-content>
+       </mat-card>
+
       <!-- Combined Table Structure -->
       <mat-card class="combined-table-card" *ngIf="combinedTableStructure">
         <mat-card-header>
@@ -360,7 +462,7 @@ import { FileService } from '../../services/file.service';
           </div>
           
           <div class="table-info">
-            <p><strong>Table Name:</strong> {{ customTableName || combinedTableStructure.table_name }}</p>
+            <p><strong>Table Name:</strong> {{ getDisplayTableName() }}</p>
             <p><strong>Source Tables:</strong> {{ combinedTableStructure.source_tables?.join(', ') || 'None' }}</p>
             <p><strong>Total Columns:</strong> {{ combinedTableStructure.column_count }}</p>
           </div>
@@ -380,7 +482,7 @@ import { FileService } from '../../services/file.service';
               mat-raised-button 
               color="accent" 
               (click)="displayCreatedColumnsTable()"
-              [disabled]="!combinedTableStructure || combinedTableStructure.column_count === 0"
+              [disabled]="!combinedTableStructure || !customTableName || combinedTableStructure.column_count === 0"
               class="display-btn">
               <mat-icon>📋</mat-icon>
               Display Created Columns Table
@@ -390,7 +492,7 @@ import { FileService } from '../../services/file.service';
               mat-raised-button 
               color="primary" 
               (click)="displayActualData()"
-              [disabled]="!combinedTableStructure || combinedTableStructure.column_count === 0"
+              [disabled]="!combinedTableStructure || !customTableName || combinedTableStructure.column_count === 0"
               class="data-btn">
               <mat-icon>📊</mat-icon>
               Display Actual Data
@@ -634,8 +736,212 @@ import { FileService } from '../../services/file.service';
       margin-top: 5px;
     }
 
-    .selection-card, .mappings-card, .combined-table-card, .actions-card {
+    .selection-card, .mappings-card, .table-name-selection-card, .combined-table-card, .actions-card {
       margin-bottom: 20px;
+    }
+
+    .table-name-selection-card {
+      border: 2px solid #4caf50;
+      background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e8 100%);
+    }
+
+    .table-name-selection-card .mat-card-header {
+      background: #4caf50;
+      color: white;
+      margin: -24px -24px 20px -24px;
+      padding: 16px 24px;
+      border-radius: 4px 4px 0 0;
+    }
+
+    .table-name-selection-content {
+      padding: 20px;
+      text-align: center;
+    }
+
+    .table-name-dropdown {
+      width: 100%;
+      max-width: 400px;
+      font-size: 16px;
+    }
+
+    .table-name-status {
+      margin-top: 20px;
+    }
+
+    .warning-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #ff6b35;
+      font-size: 14px;
+    }
+
+    .success-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #4caf50;
+      font-size: 14px;
+    }
+
+    .info-message {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #2196f3;
+      font-size: 14px;
+    }
+
+    .warning-icon, .success-icon, .info-icon {
+      font-size: 20px !important;
+      height: 20px !important;
+      width: 20px !important;
+    }
+
+    .columns-display-section {
+      margin-top: 25px;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+
+    .columns-dropdown-container {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .column-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+    }
+
+    .column-icon {
+      font-size: 18px !important;
+      color: #666;
+    }
+
+    .column-name {
+      flex-grow: 1;
+      text-align: left;
+    }
+
+    .column-index {
+      font-size: 12px;
+      color: #999;
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+
+    .columns-grid-view {
+      margin-top: 15px;
+    }
+
+    .column-selection-controls {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 15px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      flex-wrap: wrap;
+    }
+
+    .control-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .selected-count {
+      font-weight: 500;
+      color: #2196f3;
+      background: white;
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+    }
+
+    .column-chip-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .column-selection-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px;
+      border-radius: 20px;
+      transition: all 0.2s ease;
+    }
+
+    .column-selection-item.selected {
+      background: rgba(33, 150, 243, 0.1);
+      border: 1px solid #2196f3;
+    }
+
+    .column-checkbox {
+      margin: 0;
+    }
+
+    .column-display-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 16px;
+      border: 1px solid #ddd;
+      font-size: 13px;
+      color: #333;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .column-display-chip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .column-display-chip.selected-chip {
+      border: 2px solid #2196f3;
+      box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+    }
+
+    .chip-icon {
+      font-size: 16px !important;
+      color: #666;
+    }
+
+    .chip-number {
+      font-size: 11px;
+      background: rgba(0,0,0,0.1);
+      color: #666;
+      padding: 1px 5px;
+      border-radius: 8px;
+      margin-left: 4px;
+    }
+
+    .no-columns-message {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 20px;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      color: #666;
+      justify-content: center;
     }
 
     .table-selection {
@@ -1388,8 +1694,20 @@ export class ColumnSelectionComponent implements OnInit {
   actualDataTableColumns: string[] = [];
   isLoadingData = false;
   
-  // Custom table name
-  customTableName = 'combined_table';
+  // Custom table name (for manual input)
+  customTableName = '';
+  
+  // Selected table from dropdown (separate from custom input)
+  selectedDropdownTable = '';
+  
+  // Columns of the selected table
+  selectedTableColumns: string[] = [];
+  
+  // Selected columns from the dropdown table
+  selectedColumnsFromDropdown: string[] = [];
+  
+  // Real table name options (populated from actual uploaded files)
+  realTableNames: { value: string, label: string }[] = [];
 
   constructor(
     private columnMappingService: ColumnMappingService,
@@ -1414,16 +1732,128 @@ export class ColumnSelectionComponent implements OnInit {
     }
   }
 
+  onDropdownTableSelect(selectedValue: string): void {
+    // Find the selected table and get its columns
+    console.log('Dropdown selection:', selectedValue);
+    
+    // Find the file metadata for the selected table
+    if (this.filesMetadata) {
+      const selectedFile = this.filesMetadata.find(file => {
+        const tableName = file.filename
+          .replace(/\.(xlsx|xls|csv)$/i, '')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_|_$/g, '');
+        return tableName === selectedValue;
+      });
+      
+      if (selectedFile && selectedFile.columns) {
+        this.selectedTableColumns = selectedFile.columns;
+        this.selectedColumnsFromDropdown = []; // Reset selections when changing tables
+        console.log('Selected table columns:', this.selectedTableColumns);
+      } else {
+        // Handle combined table options (they don't have specific columns)
+        this.selectedTableColumns = [];
+        this.selectedColumnsFromDropdown = [];
+        console.log('No specific columns for combined table option');
+      }
+    }
+  }
+
+  getDisplayTableName(): string {
+    if (this.customTableName) {
+      const selectedOption = this.realTableNames.find(option => option.value === this.customTableName);
+      return selectedOption ? selectedOption.label : this.customTableName;
+    }
+    return 'No table selected';
+  }
+
+  getColumnColor(index: number): string {
+    const colors = ['#e3f2fd', '#f3e5f5', '#e8f5e8', '#fff3e0', '#fce4ec', '#f1f8e9', '#e0f2f1', '#f9fbe7'];
+    return colors[index % colors.length];
+  }
+
+  isColumnSelectedFromDropdown(column: string): boolean {
+    return this.selectedColumnsFromDropdown.includes(column);
+  }
+
+  onColumnToggle(column: string, isChecked: boolean): void {
+    if (isChecked) {
+      if (!this.selectedColumnsFromDropdown.includes(column)) {
+        this.selectedColumnsFromDropdown.push(column);
+      }
+    } else {
+      const index = this.selectedColumnsFromDropdown.indexOf(column);
+      if (index > -1) {
+        this.selectedColumnsFromDropdown.splice(index, 1);
+      }
+    }
+    console.log('Selected columns from dropdown:', this.selectedColumnsFromDropdown);
+  }
+
+  toggleColumn(column: string): void {
+    const isSelected = this.isColumnSelectedFromDropdown(column);
+    this.onColumnToggle(column, !isSelected);
+  }
+
+  selectAllColumns(): void {
+    this.selectedColumnsFromDropdown = [...this.selectedTableColumns];
+    console.log('All columns selected:', this.selectedColumnsFromDropdown);
+  }
+
+  selectNoColumns(): void {
+    this.selectedColumnsFromDropdown = [];
+    console.log('All columns deselected');
+  }
+
+
+
   loadFilesMetadata(): void {
     this.fileService.getFilesMetadata().subscribe({
       next: (response) => {
         this.filesMetadata = response.files;
+        this.populateRealTableNames();
+        console.log('Files metadata loaded:', this.filesMetadata);
+        console.log('Real table names populated:', this.realTableNames);
       },
       error: (error) => {
         console.error('Error loading files metadata:', error);
         this.snackBar.open('Error loading files metadata', 'Close', { duration: 3000 });
       }
     });
+  }
+
+  populateRealTableNames(): void {
+    this.realTableNames = [];
+    
+    if (this.filesMetadata && this.filesMetadata.length > 0) {
+      this.filesMetadata.forEach(file => {
+        // Create table name from filename (remove extension and clean up)
+        const tableName = file.filename
+          .replace(/\.(xlsx|xls|csv)$/i, '') // Remove file extensions
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '_') // Replace special chars with underscore
+          .replace(/_+/g, '_') // Replace multiple underscores with single
+          .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
+        
+        // Create display label (keep original filename without extension for readability)
+        const displayLabel = file.filename.replace(/\.(xlsx|xls|csv)$/i, '');
+        
+        this.realTableNames.push({
+          value: tableName,
+          label: `${displayLabel} (${file.columns?.length || 0} columns)`
+        });
+      });
+    }
+    
+    // Add some common combined table options at the end
+    this.realTableNames.push(
+      { value: 'combined_data', label: '🔗 Combined Data' },
+      { value: 'merged_results', label: '🔗 Merged Results' },
+      { value: 'final_dataset', label: '🔗 Final Dataset' },
+      { value: 'master_table', label: '🔗 Master Table' }
+    );
   }
 
   refreshData(): void {
