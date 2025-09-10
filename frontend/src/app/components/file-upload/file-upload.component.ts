@@ -182,8 +182,6 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
         </mat-card-header>
         
         <mat-card-actions>
-
-          
           <button 
             mat-raised-button 
             color="primary"
@@ -191,6 +189,15 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
             class="column-selection-btn">
             <mat-icon>🎯</mat-icon>
             Select Columns
+          </button>
+          
+          <button 
+            mat-raised-button 
+            color="accent"
+            routerLink="/sql-query-builder"
+            class="sql-query-btn">
+            <mat-icon>build</mat-icon>
+            SQL Query Builder
           </button>
         </mat-card-actions>
         
@@ -442,6 +449,23 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
       margin: 0;
     }
 
+    .column-selection-btn,
+    .sql-query-btn {
+      margin: 8px;
+      min-width: 180px;
+    }
+
+    .sql-query-btn {
+      background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+      color: white;
+    }
+
+    .sql-query-btn:hover {
+      background: linear-gradient(45deg, #ff5252, #ff7979);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+    }
+
     @media (max-width: 768px) {
       .file-upload-area {
         padding: 40px 20px;
@@ -454,6 +478,13 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
       
       .upload-btn {
         min-width: auto;
+      }
+
+      .column-selection-btn,
+      .sql-query-btn {
+        min-width: auto;
+        width: 100%;
+        margin: 4px 0;
       }
     }
   `]
