@@ -30,5 +30,5 @@ echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
 
-cd app
-python main.py 
+# Run the app as a module from the project root
+python -m app.main
