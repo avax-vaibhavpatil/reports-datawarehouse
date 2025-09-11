@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import json
 from datetime import datetime
+import sqlite3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 class SQLQueryService:
     """
     Advanced SQL Query Builder with comprehensive JOIN support
+    Now with REAL SQL execution using SQLite!
     """
     
     def __init__(self):
@@ -23,7 +25,70 @@ class SQLQueryService:
             "FULL OUTER JOIN",
             "CROSS JOIN"
         ]
+        # SQLite connection will be created per request (stateless)
         
+    def _get_database_connection(self):
+        """Create a new in-memory SQLite connection for each request"""
+        return sqlite3.connect(':memory:')
+    
+    def _load_uploaded_files_to_database(self, conn: sqlite3.Connection) -> Dict[str, Dict]:
+        """Load all uploaded files into the SQLite database"""
+        cursor = conn.cursor()
+        loaded_tables = {}
+        
+        try:
+            # Find all CSV and Excel files
+            csv_files = list(self.upload_dir.glob("*.csv"))
+            xlsx_files = list(self.upload_dir.glob("*.xlsx"))
+            xls_files = list(self.upload_dir.glob("*.xls"))
+            
+            all_files = csv_files + xlsx_files + xls_files
+            
+            self.logger.info(f"Loading {len(all_files)} files into database...")
+            
+            for file_path in all_files:
+                try:
+                    # Skip very small or system files
+                    if file_path.stat().st_size < 10 or file_path.name.startswith('.'):
+                        continue
+                    
+                    # Create clean table name
+                    table_name = file_path.stem.replace('-', '_').replace(' ', '_').replace('(', '').replace(')', '').lower()
+                    
+                    # Load file based on extension
+                    if file_path.suffix.lower() == '.csv':
+                        df = pd.read_csv(file_path)
+                    else:  # Excel files
+                        df = pd.read_excel(file_path)
+                    
+                    # Skip empty files
+                    if df.empty:
+                        self.logger.warning(f"Skipping empty file: {file_path.name}")
+                        continue
+                    
+                    # Load into SQLite
+                    df.to_sql(table_name, conn, index=False, if_exists='replace')
+                    
+                    # Track loaded table
+                    loaded_tables[table_name] = {
+                        'original_filename': file_path.name,
+                        'row_count': len(df),
+                        'columns': list(df.columns)
+                    }
+                    
+                    self.logger.info(f"Loaded {file_path.name} → {table_name} ({len(df)} rows)")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error loading {file_path.name}: {e}")
+                    continue
+            
+            self.logger.info(f"Successfully loaded {len(loaded_tables)} tables")
+            return loaded_tables
+            
+        except Exception as e:
+            self.logger.error(f"Error loading files to database: {e}")
+            return {}
+
     def generate_sql_query(self, query_config: Dict) -> Dict:
         """
         Generate SQL query based on configuration
@@ -342,51 +407,83 @@ class SQLQueryService:
             }
     
     def _execute_sql_against_files(self, sql_query: str, limit: int = None) -> Dict:
-        """Execute SQL query against uploaded CSV/Excel files"""
+        """Execute SQL query against uploaded CSV/Excel files using SQLite"""
         import time
         start_time = time.time()
         
         try:
-            # This is a simplified implementation
-            # In a real scenario, you'd use a proper SQL engine like SQLite or DuckDB
+            # Create database connection
+            conn = self._get_database_connection()
+            cursor = conn.cursor()
             
-            # For now, we'll simulate query execution
-            # In production, you'd parse the SQL and execute against the actual data
+            # Load all uploaded files into database
+            loaded_tables = self._load_uploaded_files_to_database(conn)
             
-            # Mock data for demonstration
-            sample_data = [
-                {
-                    "lg_voucher_date": "2025-09-01",
-                    "lg_voucher_no": "V001",
-                    "ins_no": "I001",
-                    "ins_date": "2025-09-01",
-                    "acc_name": "Bank Account",
-                    "lg_narration": "Payment received",
-                    "receipt": 1000.00,
-                    "payment": 0.00
-                },
-                {
-                    "lg_voucher_date": "2025-09-02",
-                    "lg_voucher_no": "V002",
-                    "ins_no": "I002",
-                    "ins_date": "2025-09-02",
-                    "acc_name": "Cash Account",
-                    "lg_narration": "Payment made",
-                    "receipt": 0.00,
-                    "payment": 500.00
+            if not loaded_tables:
+                return {
+                    "data": [],
+                    "total_rows": 0,
+                    "columns": [],
+                    "execution_time": f"{(time.time() - start_time):.3f}s",
+                    "error": "No data files loaded. Please upload some Excel/CSV files first."
                 }
-            ]
             
-            columns = list(sample_data[0].keys()) if sample_data else []
+            # Execute the actual SQL query
+            self.logger.info(f"Executing SQL: {sql_query}")
+            
+            # Apply limit if specified
+            if limit:
+                if 'LIMIT' not in sql_query.upper():
+                    sql_query = f"{sql_query} LIMIT {limit}"
+            
+            cursor.execute(sql_query)
+            results = cursor.fetchall()
+            
+            # Get column names
+            column_names = [description[0] for description in cursor.description] if cursor.description else []
+            
+            # Format results as list of dictionaries (same as your current format)
+            formatted_data = [dict(zip(column_names, row)) for row in results]
+            
             execution_time = f"{(time.time() - start_time):.3f}s"
             
+            result = {
+                "data": formatted_data,
+                "total_rows": len(formatted_data),
+                "columns": column_names,
+                "execution_time": execution_time,
+                "loaded_tables": loaded_tables  # Extra info about what tables were loaded
+            }
+            
+            self.logger.info(f"Query executed successfully: {len(formatted_data)} rows returned in {execution_time}")
+            
+            # Close connection
+            conn.close()
+            
+            return result
+            
+        except sqlite3.Error as e:
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"SQL Error: {str(e)}"
+            self.logger.error(error_msg)
+            
             return {
-                "data": sample_data[:limit] if limit else sample_data,
-                "total_rows": len(sample_data),
-                "columns": columns,
-                "execution_time": execution_time
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": execution_time,
+                "error": error_msg
             }
             
         except Exception as e:
-            self.logger.error(f"Error executing SQL against files: {e}")
-            raise e
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"Execution error: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": execution_time,
+                "error": error_msg
+            }
