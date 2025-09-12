@@ -1,0 +1,452 @@
+.visual-builder-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f5f5f5;
+}
+
+// Toolbar Styles
+.builder-toolbar {
+  position: relative;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+  .toolbar-title {
+    display: flex;
+    align-items: center;
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .toolbar-spacer {
+    flex: 1 1 auto;
+  }
+
+  .toolbar-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+
+    button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+  }
+}
+
+// Main Content
+.builder-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidenav-container {
+  height: 100%;
+}
+
+// Side Navigation
+.builder-sidenav {
+  width: 320px;
+  border-right: 1px solid #e0e0e0;
+  background: #fafafa;
+
+  .sidenav-content {
+    padding: 16px;
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+// Statistics Card
+.stats-card {
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+
+    .stat-label {
+      flex: 1;
+      font-weight: 500;
+      color: #666;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #333;
+      font-size: 16px;
+    }
+
+    mat-icon {
+      font-size: 20px;
+    }
+  }
+}
+
+// Instructions Card
+.instructions-card {
+  .instruction-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+    padding: 8px;
+    border-radius: 6px;
+    background: #f8f9fa;
+
+    .step-icon {
+      color: #2196f3;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    span {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+  }
+}
+
+// Tables List Card
+.tables-list-card {
+  .tables-list {
+    padding: 0;
+
+    .table-list-item {
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: white;
+
+      &:hover {
+        background: #f5f5f5;
+      }
+
+      .table-info {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+
+        .table-name {
+          font-weight: 500;
+          color: #333;
+        }
+
+        .table-chips {
+          .column-count-chip {
+            font-size: 11px;
+            height: 24px;
+          }
+        }
+      }
+    }
+  }
+}
+
+// Relationships Card
+.relationships-card {
+  .relationships-list {
+    padding: 0;
+
+    .relationship-item {
+      border: 1px solid #e3f2fd;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      background: #f8f9ff;
+
+      .relationship-info {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        .relationship-connection {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+
+          .source-info, .target-info {
+            background: #e3f2fd;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 500;
+            color: #1976d2;
+          }
+
+          .connection-arrow {
+            color: #4caf50;
+            font-size: 16px;
+          }
+        }
+
+        .relationship-type-chip {
+          font-size: 10px;
+          height: 20px;
+          background: #4caf50;
+          color: white;
+        }
+      }
+    }
+  }
+}
+
+// Canvas Container
+.canvas-container {
+  background: #fafafa;
+  position: relative;
+}
+
+.canvas-wrapper {
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+// Connection Status
+.connection-status {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2196f3;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 1000;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  animation: slideDown 0.3s ease-out;
+
+  mat-icon {
+    font-size: 20px;
+  }
+
+  span {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  button {
+    color: white;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+// SVG Canvas
+.svg-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+
+  svg {
+    display: block;
+    margin: 0 auto;
+  }
+}
+
+// Empty State
+.empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #666;
+
+  .empty-icon {
+    font-size: 64px;
+    color: #ccc;
+    margin-bottom: 16px;
+  }
+
+  h3 {
+    margin: 0 0 8px 0;
+    color: #999;
+  }
+
+  p {
+    margin: 0;
+    color: #bbb;
+  }
+}
+
+// D3 SVG Styles (Global styles for D3 elements)
+:host ::ng-deep {
+  .table-group {
+    cursor: move;
+
+    &:hover {
+      .table-bg {
+        stroke-width: 3;
+        filter: drop-shadow(0px 6px 12px rgba(0,0,0,0.15));
+      }
+    }
+
+    .table-bg {
+      transition: all 0.2s ease;
+    }
+
+    .table-header {
+      transition: all 0.2s ease;
+    }
+
+    .table-title {
+      user-select: none;
+    }
+
+    .column-item {
+      transition: all 0.2s ease;
+
+      &:hover {
+        .column-bg {
+          fill: #e3f2fd !important;
+        }
+      }
+    }
+
+    .column-bg {
+      transition: fill 0.2s ease;
+    }
+  }
+
+  .relationship-link {
+    .connection-line {
+      transition: all 0.2s ease;
+
+      &:hover {
+        stroke-width: 4;
+        stroke: #2e7d32;
+      }
+    }
+
+    .connection-label {
+      font-family: 'Roboto', sans-serif;
+      font-weight: 500;
+      background: white;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #4caf50;
+      user-select: none;
+    }
+  }
+
+  // Zoom and Pan cursor
+  .main-group {
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+}
+
+// Responsive Design
+@media (max-width: 768px) {
+  .builder-sidenav {
+    width: 280px;
+  }
+
+  .toolbar-actions {
+    gap: 8px;
+
+    button {
+      min-width: auto;
+      
+      .mat-button-wrapper {
+        padding: 0 8px;
+      }
+    }
+  }
+
+  .connection-status {
+    left: 16px;
+    right: 16px;
+    transform: none;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .builder-sidenav {
+    width: 100%;
+  }
+
+  .toolbar-title {
+    display: none;
+  }
+
+  .toolbar-actions {
+    button span {
+      display: none;
+    }
+  }
+}
+
+// Animation Classes
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.fade-out {
+  animation: fadeOut 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+// Material Design Overrides
+.mat-mdc-card {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+  border-radius: 8px !important;
+}
+
+.mat-mdc-list-item {
+  height: auto !important;
+  min-height: 48px !important;
+}
+
+.mat-mdc-chip-set {
+  margin: 0 !important;
+}
+
+.mat-mdc-chip {
+  font-size: 11px !important;
+}

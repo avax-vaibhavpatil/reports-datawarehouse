@@ -1,0 +1,177 @@
+<div class="visual-builder-container">
+  <!-- Toolbar -->
+  <mat-toolbar color="primary" class="builder-toolbar">
+    <button mat-icon-button (click)="toggleSidenav()" matTooltip="Toggle Controls">
+      <mat-icon>menu</mat-icon>
+    </button>
+    
+    <span class="toolbar-title">
+      <mat-icon style="margin-right: 8px;">account_tree</mat-icon>
+      Visual Relationship Builder
+    </span>
+    
+    <span class="toolbar-spacer"></span>
+    
+    <div class="toolbar-actions">
+      <button mat-stroked-button color="accent" (click)="autoLayout()" matTooltip="Auto-arrange tables">
+        <mat-icon>auto_fix_high</mat-icon>
+        Auto Layout
+      </button>
+      
+      <button mat-stroked-button color="warn" (click)="clearAllRelationships()" matTooltip="Clear all relationships">
+        <mat-icon>clear_all</mat-icon>
+        Clear All
+      </button>
+      
+      <button mat-raised-button color="accent" (click)="exportRelationships()" matTooltip="Export relationships">
+        <mat-icon>download</mat-icon>
+        Export
+      </button>
+    </div>
+  </mat-toolbar>
+
+  <!-- Main Content -->
+  <div class="builder-content">
+    <!-- Side Navigation -->
+    <mat-sidenav-container class="sidenav-container">
+      <mat-sidenav 
+        [opened]="sidenavOpened" 
+        mode="side" 
+        class="builder-sidenav"
+        [fixedInViewport]="true">
+        
+        <div class="sidenav-content">
+          <!-- Statistics Card -->
+          <mat-card class="stats-card">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>analytics</mat-icon>
+                Statistics
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="stat-item">
+                <mat-icon color="primary">table_view</mat-icon>
+                <span class="stat-label">Tables:</span>
+                <span class="stat-value">{{ tables.length }}</span>
+              </div>
+              <div class="stat-item">
+                <mat-icon color="accent">link</mat-icon>
+                <span class="stat-label">Relationships:</span>
+                <span class="stat-value">{{ relationships.length }}</span>
+              </div>
+              <div class="stat-item">
+                <mat-icon color="warn">table_chart</mat-icon>
+                <span class="stat-label">Total Columns:</span>
+                <span class="stat-value">{{ getTotalColumns() }}</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Instructions Card -->
+          <mat-card class="instructions-card">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>help_outline</mat-icon>
+                How to Use
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="instruction-step">
+                <mat-icon class="step-icon">looks_one</mat-icon>
+                <span>Click on a column in any table to start connecting</span>
+              </div>
+              <div class="instruction-step">
+                <mat-icon class="step-icon">looks_two</mat-icon>
+                <span>Click on a column in another table to complete the connection</span>
+              </div>
+              <div class="instruction-step">
+                <mat-icon class="step-icon">looks_3</mat-icon>
+                <span>Drag tables to rearrange them</span>
+              </div>
+              <div class="instruction-step">
+                <mat-icon class="step-icon">looks_4</mat-icon>
+                <span>Use zoom and pan to navigate</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Tables List Card -->
+          <mat-card class="tables-list-card">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>view_list</mat-icon>
+                Tables
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <mat-list class="tables-list">
+                <mat-list-item *ngFor="let table of tables" class="table-list-item">
+                  <mat-icon matListItemIcon color="primary">table_view</mat-icon>
+                  <div matListItemTitle class="table-info">
+                    <span class="table-name">{{ table.name }}</span>
+                    <mat-chip-set class="table-chips">
+                      <mat-chip class="column-count-chip">
+                        <mat-icon matChipAvatar>table_chart</mat-icon>
+                        {{ table.columns.length }} columns
+                      </mat-chip>
+                    </mat-chip-set>
+                  </div>
+                </mat-list-item>
+              </mat-list>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Current Relationships Card -->
+          <mat-card class="relationships-card" *ngIf="relationships.length > 0">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>link</mat-icon>
+                Active Relationships
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <mat-list class="relationships-list">
+                <mat-list-item *ngFor="let rel of relationships" class="relationship-item">
+                  <mat-icon matListItemIcon color="accent">link</mat-icon>
+                  <div matListItemTitle class="relationship-info">
+                    <div class="relationship-connection">
+                      <span class="source-info">{{ rel.source.name }}.{{ rel.sourceColumn }}</span>
+                      <mat-icon class="connection-arrow">arrow_right_alt</mat-icon>
+                      <span class="target-info">{{ rel.target.name }}.{{ rel.targetColumn }}</span>
+                    </div>
+                    <mat-chip class="relationship-type-chip">{{ rel.type }}</mat-chip>
+                  </div>
+                </mat-list-item>
+              </mat-list>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      </mat-sidenav>
+
+      <!-- Main Canvas -->
+      <mat-sidenav-content class="canvas-container">
+        <div class="canvas-wrapper">
+          <!-- Connection Status -->
+          <div *ngIf="isConnecting" class="connection-status">
+            <mat-icon>link</mat-icon>
+            <span>Connecting from <strong>{{ selectedTable?.name }}.{{ selectedColumn }}</strong> - Click target column to complete</span>
+            <button mat-icon-button (click)="cancelConnection()" matTooltip="Cancel connection">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+
+          <!-- SVG Canvas -->
+          <div class="svg-canvas" #svgContainer></div>
+          
+          <!-- Empty State -->
+          <div *ngIf="tables.length === 0" class="empty-state">
+            <mat-icon class="empty-icon">table_view</mat-icon>
+            <h3>No Tables Available</h3>
+            <p>Upload some Excel/CSV files to start building relationships</p>
+          </div>
+        </div>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
+  </div>
+</div>

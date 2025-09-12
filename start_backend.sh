@@ -30,5 +30,9 @@ echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
 
+<<<<<<< HEAD
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload 
+=======
 # Run the app as a module from the project root
 python -m app.main
+>>>>>>> 7d8203b9f36d030d42404629897388362779846a

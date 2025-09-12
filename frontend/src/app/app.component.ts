@@ -1,25 +1,47 @@
 import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, MatToolbarModule, MatButtonModule, MatIconModule],
   template: `
     <div class="app-container">
-      <header class="app-header">
-        <h1>📊 Data Relationship </h1>
-        <p>Upload Excel files and explore their structure</p>
-      </header>
+      <mat-toolbar color="primary" class="main-toolbar">
+        <span class="toolbar-title">
+          <mat-icon style="margin-right: 8px;">analytics</mat-icon>
+          Excel Relationship Manager
+        </span>
+        
+        <span class="toolbar-spacer"></span>
+        
+        <nav class="toolbar-nav">
+          <button mat-button routerLink="/" routerLinkActive="active-nav" [routerLinkActiveOptions]="{exact: true}">
+            <mat-icon>cloud_upload</mat-icon>
+            Upload
+          </button>
+          <button mat-button routerLink="/column-selection" routerLinkActive="active-nav">
+            <mat-icon>view_column</mat-icon>
+            Column Selection
+          </button>
+          <button mat-button routerLink="/relationships" routerLinkActive="active-nav">
+            <mat-icon>link</mat-icon>
+            Relationships
+          </button>
+          <button mat-button routerLink="/visual-builder" routerLinkActive="active-nav">
+            <mat-icon>account_tree</mat-icon>
+            Visual Builder
+          </button>
+        </nav>
+      </mat-toolbar>
       
       <main class="app-main">
         <router-outlet></router-outlet>
       </main>
-      
-      <footer class="app-footer">
-        <p>&copy; 2024 Excel Generator. Built with Angular & FastAPI.</p>
-      </footer>
     </div>
   `,
   styles: [`
@@ -27,50 +49,70 @@ import { CommonModule } from '@angular/common';
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #f5f5f5;
     }
     
-    .app-header {
-      text-align: center;
-      padding: 40px 20px;
+    .main-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .toolbar-title {
+      display: flex;
+      align-items: center;
+      font-size: 18px;
+      font-weight: 500;
+    }
+    
+    .toolbar-spacer {
+      flex: 1 1 auto;
+    }
+    
+    .toolbar-nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    .toolbar-nav button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: rgba(255,255,255,0.8);
+    }
+    
+    .toolbar-nav button:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    
+    .toolbar-nav button.active-nav {
+      background: rgba(255,255,255,0.2);
       color: white;
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-    }
-    
-    .app-header h1 {
-      margin: 0 0 16px 0;
-      font-size: 3rem;
-      font-weight: 300;
-      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    }
-    
-    .app-header p {
-      margin: 0;
-      font-size: 1.2rem;
-      opacity: 0.9;
     }
     
     .app-main {
       flex: 1;
-      padding: 20px;
-    }
-    
-    .app-footer {
-      text-align: center;
-      padding: 20px;
-      color: white;
-      opacity: 0.8;
-      background: rgba(0, 0, 0, 0.1);
+      overflow: hidden;
     }
     
     @media (max-width: 768px) {
-      .app-header h1 {
-        font-size: 2rem;
+      .toolbar-title {
+        font-size: 16px;
       }
       
-      .app-header p {
-        font-size: 1rem;
+      .toolbar-nav {
+        gap: 4px;
+      }
+      
+      .toolbar-nav button {
+        min-width: auto;
+        padding: 0 8px;
+      }
+      
+      .toolbar-nav button span {
+        display: none;
       }
     }
   `]
