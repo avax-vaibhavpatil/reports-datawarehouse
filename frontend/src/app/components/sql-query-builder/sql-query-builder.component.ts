@@ -96,6 +96,20 @@ export class SQLQueryBuilderComponent implements OnInit {
     return this.joinsArray.at(joinIndex).get('conditions') as FormArray;
   }
 
+  getJoinColumnsArray(joinIndex: number): FormArray {
+    return this.joinsArray.at(joinIndex).get('columns') as FormArray;
+  }
+
+  getJoinTableName(joinIndex: number): string {
+    return this.joinsArray.at(joinIndex).get('table')?.value || '';
+  }
+
+  getJoinTableColumns(joinIndex: number): string[] {
+    const tableName = this.getJoinTableName(joinIndex);
+    const table = this.availableTables.find(t => t.name === tableName);
+    return table?.columns || [];
+  }
+
   getTableName(tableIndex: number): string {
     return this.tablesArray.at(tableIndex).get('name')?.value || '';
   }
@@ -167,6 +181,8 @@ export class SQLQueryBuilderComponent implements OnInit {
       type: ['INNER JOIN', Validators.required],
       table: ['', Validators.required],
       alias: [''],
+      columns: this.fb.array([]),
+      selectAll: [false],
       conditions: this.fb.array([])
     });
     this.joinsArray.push(joinForm);
@@ -285,6 +301,59 @@ export class SQLQueryBuilderComponent implements OnInit {
     }
   }
 
+  onJoinTableChange(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex) as FormGroup;
+    const selectedTableName = joinForm.get('table')?.value;
+    
+    if (selectedTableName) {
+      const selectedTable = this.availableTables.find(t => t.name === selectedTableName);
+      if (selectedTable) {
+        // Clear existing columns and add all available columns (unselected by default)
+        const columnsArray = joinForm.get('columns') as FormArray;
+        columnsArray.clear();
+        
+        selectedTable.columns.forEach(() => {
+          const columnControl = this.fb.control(false); // Start with false (unselected)
+          columnsArray.push(columnControl);
+        });
+        
+        // Reset select all checkbox
+        joinForm.get('selectAll')?.setValue(false);
+      }
+    }
+  }
+
+  toggleSelectAllJoinColumns(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex) as FormGroup;
+    const selectAllValue = joinForm.get('selectAll')?.value;
+    const columnsArray = joinForm.get('columns') as FormArray;
+    
+    // Update all column checkboxes to match select all state
+    columnsArray.controls.forEach(control => {
+      control.setValue(selectAllValue);
+    });
+  }
+
+  onIndividualJoinColumnChange(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex) as FormGroup;
+    const columnsArray = joinForm.get('columns') as FormArray;
+    const selectAllControl = joinForm.get('selectAll');
+    
+    // Check if all columns are selected
+    const allSelected = columnsArray.controls.every(control => control.value);
+    const noneSelected = columnsArray.controls.every(control => !control.value);
+    
+    // Update select all checkbox state
+    if (allSelected) {
+      selectAllControl?.setValue(true);
+    } else if (noneSelected) {
+      selectAllControl?.setValue(false);
+    } else {
+      // Some columns selected - set to indeterminate state
+      selectAllControl?.setValue(false);
+    }
+  }
+
   generateSQL(): void {
     if (this.queryForm.valid) {
       this.isLoading = true;
@@ -308,12 +377,27 @@ export class SQLQueryBuilderComponent implements OnInit {
             custom_expressions: table.custom_expressions || []
           };
         }).filter((table: any) => table.columns.length > 0), // Only include tables with selected columns
-        joins: formValue.joins.map((join: any) => ({
-          type: join.type,
-          table: join.table,
-          alias: join.alias || undefined,
-          conditions: join.conditions || []
-        })),
+        joins: formValue.joins.map((join: any, joinIndex: number) => {
+          // Get columns for joined table
+          const joinTable = this.availableTables.find(t => t.name === join.table);
+          const selectedJoinColumns: string[] = [];
+          
+          if (joinTable && join.columns) {
+            join.columns.forEach((isSelected: boolean, colIndex: number) => {
+              if (isSelected && joinTable.columns[colIndex]) {
+                selectedJoinColumns.push(joinTable.columns[colIndex]);
+              }
+            });
+          }
+          
+          return {
+            type: join.type,
+            table: join.table,
+            alias: join.alias || undefined,
+            columns: selectedJoinColumns,
+            conditions: join.conditions || []
+          };
+        }),
         where_conditions: formValue.where_conditions.map((where: any) => ({
           left_side: where.left_side,
           operator: where.operator,
@@ -437,12 +521,27 @@ export class SQLQueryBuilderComponent implements OnInit {
             custom_expressions: table.custom_expressions || []
           };
         }).filter((table: any) => table.columns.length > 0),
-        joins: formValue.joins.map((join: any) => ({
-          type: join.type,
-          table: join.table,
-          alias: join.alias || undefined,
-          conditions: join.conditions || []
-        })),
+        joins: formValue.joins.map((join: any, joinIndex: number) => {
+          // Get columns for joined table
+          const joinTable = this.availableTables.find(t => t.name === join.table);
+          const selectedJoinColumns: string[] = [];
+          
+          if (joinTable && join.columns) {
+            join.columns.forEach((isSelected: boolean, colIndex: number) => {
+              if (isSelected && joinTable.columns[colIndex]) {
+                selectedJoinColumns.push(joinTable.columns[colIndex]);
+              }
+            });
+          }
+          
+          return {
+            type: join.type,
+            table: join.table,
+            alias: join.alias || undefined,
+            columns: selectedJoinColumns,
+            conditions: join.conditions || []
+          };
+        }),
         where_conditions: formValue.where_conditions.map((where: any) => ({
           left_side: where.left_side,
           operator: where.operator,

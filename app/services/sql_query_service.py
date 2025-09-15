@@ -107,6 +107,7 @@ class SQLQueryService:
                         "type": "FULL OUTER JOIN",
                         "table": "ledger_detail",
                         "alias": "ld",
+                        "columns": ["lgd_budget_code", "lgd_branch_code", "lgd_qty"],  # Added support for join table columns
                         "conditions": [
                             {
                                 "left_table": "l",
@@ -125,8 +126,8 @@ class SQLQueryService:
             }
         """
         try:
-            # Build SELECT clause
-            select_clause = self._build_select_clause(query_config["tables"])
+            # Build SELECT clause - now includes columns from joined tables
+            select_clause = self._build_select_clause(query_config["tables"], query_config.get("joins", []))
             
             # Build FROM clause
             from_clause = self._build_from_clause(query_config["tables"])
@@ -170,10 +171,11 @@ class SQLQueryService:
             self.logger.error(f"Error generating SQL query: {e}")
             raise ValueError(f"Failed to generate SQL query: {str(e)}")
     
-    def _build_select_clause(self, tables: List[Dict]) -> str:
-        """Build SELECT clause with table aliases and custom expressions"""
+    def _build_select_clause(self, tables: List[Dict], joins: List[Dict] = None) -> str:
+        """Build SELECT clause with table aliases and custom expressions, including joined table columns"""
         columns = []
         
+        # Process main tables
         for table in tables:
             table_alias = table.get("alias", table["name"])
             table_columns = table.get("columns", [])
@@ -189,6 +191,21 @@ class SQLQueryService:
                 
                 # Add custom expressions (CASE statements, etc.)
                 for expr in custom_expressions:
+                    columns.append(expr)
+        
+        # Process joined tables
+        if joins:
+            for join in joins:
+                join_alias = join.get("alias", join["table"])
+                join_columns = join.get("columns", [])
+                join_custom_expressions = join.get("custom_expressions", [])
+                
+                # Add regular columns from joined table
+                for column in join_columns:
+                    columns.append(f"{join_alias}.{column}")
+                
+                # Add custom expressions from joined table
+                for expr in join_custom_expressions:
                     columns.append(expr)
         
         return f"SELECT {', '.join(columns)}"

@@ -22,6 +22,7 @@ class JoinConfig(BaseModel):
     type: str
     table: str
     alias: Optional[str] = None
+    columns: Optional[List[str]] = []
     conditions: List[JoinCondition]
 
 class WhereCondition(BaseModel):
