@@ -88,7 +88,7 @@ class SQLQueryService:
         except Exception as e:
             self.logger.error(f"Error loading files to database: {e}")
             return {}
-
+        
     def generate_sql_query(self, query_config: Dict) -> Dict:
         """
         Generate SQL query based on configuration
