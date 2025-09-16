@@ -5,6 +5,21 @@
   </div>
 
   <form [formGroup]="queryForm" (ngSubmit)="generateSQL()">
+    <!-- Custom Table Name Section -->
+    <mat-card class="section-card">
+      <mat-card-header>
+        <mat-card-title>Custom Table Name</mat-card-title>
+        <mat-card-subtitle>Enter a name for your query result table</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        <mat-form-field appearance="outline" class="table-name-field">
+          <mat-label>Table Name</mat-label>
+          <input matInput formControlName="custom_table_name" placeholder="e.g., sales_report, customer_summary" required>
+          <mat-hint>This name will be used for the downloaded file</mat-hint>
+        </mat-form-field>
+      </mat-card-content>
+    </mat-card>
+
     <!-- Tables Section -->
     <mat-card class="section-card">
       <mat-card-header>

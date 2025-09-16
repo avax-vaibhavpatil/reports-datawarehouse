@@ -64,7 +64,8 @@ export class SQLQueryBuilderComponent implements OnInit {
       where_conditions: this.fb.array([]),
       group_by: this.fb.array([]),
       order_by: this.fb.array([]),
-      limit: [null]
+      limit: [null],
+      custom_table_name: ['', Validators.required]
     });
   }
 
@@ -583,19 +584,26 @@ export class SQLQueryBuilderComponent implements OnInit {
       return;
     }
 
+    // Get custom table name from form
+    const customTableName = this.queryForm.get('custom_table_name')?.value;
+    if (!customTableName) {
+      this.snackBar.open('Please enter a table name before exporting', 'Close', { duration: 3000 });
+      return;
+    }
+
     // Convert data to CSV
     const csvContent = this.convertToCSV(this.queryResults, this.queryColumns);
     
-    // Create and download file
+    // Create and download file with custom table name
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `query_results_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `${customTableName}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     window.URL.revokeObjectURL(url);
     
-    this.snackBar.open('Data exported to CSV successfully!', 'Close', { duration: 2000 });
+    this.snackBar.open(`Data exported to ${customTableName}.csv successfully!`, 'Close', { duration: 2000 });
   }
 
   private convertToCSV(data: any[], columns: string[]): string {

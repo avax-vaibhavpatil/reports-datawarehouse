@@ -41,6 +41,17 @@
   font-size: 14px;
 }
 
+/* Custom Table Name */
+.table-name-field {
+  max-width: 400px;
+  margin-bottom: 16px;
+}
+
+.table-name-field mat-hint {
+  color: #666;
+  font-size: 12px;
+}
+
 /* Table Configuration */
 .table-config {
   border: 1px solid #e0e0e0;
