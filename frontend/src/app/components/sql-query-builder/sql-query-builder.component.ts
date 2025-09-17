@@ -9,7 +9,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
+import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse, SaveTableRequest, SaveTableResponse } from '../../services/sql-query.service';
 
 @Component({
   selector: 'app-sql-query-builder',
@@ -43,6 +43,11 @@ export class SQLQueryBuilderComponent implements OnInit {
   totalRows = 0;
   executionTime = '';
   isExecuting = false;
+  
+  // Save as Table properties
+  newTableName = '';
+  isSaving = false;
+  saveStatus: { type: 'success' | 'error', message: string } | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -625,5 +630,60 @@ export class SQLQueryBuilderComponent implements OnInit {
     );
     
     return [header, ...rows].join('\n');
+  }
+
+  // Save as Table methods
+  isValidTableName(): boolean {
+    if (!this.newTableName) return false;
+    // Table name should start with letter or underscore, contain only letters, numbers, underscores
+    const tableNameRegex = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+    return tableNameRegex.test(this.newTableName);
+  }
+
+  clearTableName(): void {
+    this.newTableName = '';
+    this.saveStatus = null;
+  }
+
+  saveAsTable(): void {
+    if (!this.isValidTableName() || !this.newTableName || this.queryResults.length === 0) {
+      this.snackBar.open('Please enter a valid table name and ensure query has results', 'Close', { duration: 3000 });
+      return;
+    }
+
+    this.isSaving = true;
+    this.saveStatus = null;
+
+    const saveRequest: SaveTableRequest = {
+      table_name: this.newTableName,
+      data: this.queryResults,
+      columns: this.queryColumns,
+      sql_query: this.generatedSQL
+    };
+
+    this.sqlQueryService.saveAsTable(saveRequest).subscribe({
+      next: (response: SaveTableResponse) => {
+        this.isSaving = false;
+        this.saveStatus = {
+          type: 'success',
+          message: `Table '${this.newTableName}' saved successfully with ${response.rows_inserted} rows!`
+        };
+        this.snackBar.open(`Table '${this.newTableName}' saved successfully!`, 'Close', { duration: 3000 });
+        
+        // Clear the form after successful save
+        setTimeout(() => {
+          this.clearTableName();
+        }, 2000);
+      },
+      error: (error: any) => {
+        this.isSaving = false;
+        this.saveStatus = {
+          type: 'error',
+          message: `Error saving table: ${error.error?.detail || error.message || 'Unknown error'}`
+        };
+        this.snackBar.open('Error saving table', 'Close', { duration: 3000 });
+        console.error('Error saving table:', error);
+      }
+    });
   }
 }

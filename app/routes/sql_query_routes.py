@@ -323,3 +323,38 @@ INNER JOIN siscon_bank b
     ]
     
     return JSONResponse(content={"examples": examples}, status_code=200)
+
+# Save Table Models
+class SaveTableRequest(BaseModel):
+    table_name: str
+    data: List[Dict[str, Any]]
+    columns: List[str]
+    sql_query: str
+
+class SaveTableResponse(BaseModel):
+    success: bool
+    table_name: str
+    rows_inserted: int
+    message: str
+
+@router.post("/save-table", response_model=SaveTableResponse)
+async def save_table(
+    request: SaveTableRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """
+    Save query results as a new table in the database
+    """
+    try:
+        result = service.save_query_results_as_table(
+            table_name=request.table_name,
+            data=request.data,
+            columns=request.columns,
+            sql_query=request.sql_query
+        )
+        
+        return JSONResponse(content=result, status_code=200)
+        
+    except Exception as e:
+        logger.error(f"Error saving table: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

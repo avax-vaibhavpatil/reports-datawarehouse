@@ -402,6 +402,56 @@
         </button>
       </div>
 
+      <!-- Save as Table Section -->
+      <div *ngIf="showPreview && queryResults.length > 0" class="save-table-section">
+        <mat-divider style="margin: 20px 0;"></mat-divider>
+        
+        <div class="save-table-header">
+          <h4>💾 Save Query Results as New Table</h4>
+          <p>Save the current query results as a permanent table in the database</p>
+        </div>
+        
+        <div class="save-table-form">
+          <mat-form-field appearance="outline" class="table-name-field">
+            <mat-label>New Table Name</mat-label>
+            <input 
+              matInput 
+              [(ngModel)]="newTableName" 
+              placeholder="e.g., my_analysis_results"
+              maxlength="50"
+              pattern="[a-zA-Z_][a-zA-Z0-9_]*">
+            <mat-hint>Enter a valid table name (letters, numbers, underscore only)</mat-hint>
+            <mat-error *ngIf="!isValidTableName()">Invalid table name format</mat-error>
+          </mat-form-field>
+          
+          <div class="save-table-actions">
+            <button 
+              mat-raised-button 
+              color="accent" 
+              (click)="saveAsTable()"
+              [disabled]="isSaving || !isValidTableName() || !newTableName">
+              <mat-icon *ngIf="isSaving">hourglass_empty</mat-icon>
+              <mat-icon *ngIf="!isSaving">save</mat-icon>
+              {{ isSaving ? 'Saving...' : 'Save as Table' }}
+            </button>
+            
+            <button 
+              mat-stroked-button 
+              (click)="clearTableName()"
+              [disabled]="isSaving">
+              <mat-icon>clear</mat-icon>
+              Clear
+            </button>
+          </div>
+        </div>
+        
+        <!-- Save Status -->
+        <div *ngIf="saveStatus" class="save-status" [ngClass]="saveStatus.type">
+          <mat-icon>{{ saveStatus.type === 'success' ? 'check_circle' : 'error' }}</mat-icon>
+          <span>{{ saveStatus.message }}</span>
+        </div>
+      </div>
+
       <!-- Query Results -->
       <div *ngIf="showPreview && queryResults.length > 0" class="query-results-section">
         <div class="results-header">

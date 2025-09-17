@@ -138,4 +138,25 @@ export class SQLQueryService {
   getQueryExamples(): Observable<{examples: any[]}> {
     return this.http.get<{examples: any[]}>(`${this.apiUrl}/examples`);
   }
+
+  /**
+   * Save query results as a new table
+   */
+  saveAsTable(request: SaveTableRequest): Observable<SaveTableResponse> {
+    return this.http.post<SaveTableResponse>(`${this.apiUrl}/save-table`, request);
+  }
 }
+
+// Save Table interfaces
+export interface SaveTableRequest {
+  table_name: string;
+  data: any[];
+  columns: string[];
+  sql_query: string;
+}
+
+export interface SaveTableResponse {
+  success: boolean;
+  table_name: string;
+  rows_inserted: number;
+  message: string;

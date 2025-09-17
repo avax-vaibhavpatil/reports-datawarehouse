@@ -4,7 +4,8 @@ import logging
 from pathlib import Path
 import json
 from datetime import datetime
-import sqlite3
+from sqlalchemy import text, create_engine
+from ..database import db_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,12 +29,13 @@ class SQLQueryService:
         # SQLite connection will be created per request (stateless)
         
     def _get_database_connection(self):
-        """Create a new in-memory SQLite connection for each request"""
-        return sqlite3.connect(':memory:')
+        """Get PostgreSQL database connection"""
+        # Ensure metadata table exists
+        db_manager.create_metadata_table()
+        return db_manager.get_connection()
     
-    def _load_uploaded_files_to_database(self, conn: sqlite3.Connection) -> Dict[str, Dict]:
-        """Load all uploaded files into the SQLite database"""
-        cursor = conn.cursor()
+    def _load_uploaded_files_to_database(self, conn) -> Dict[str, Dict]:
+        """Load all uploaded files into the PostgreSQL database"""
         loaded_tables = {}
         
         try:
@@ -44,7 +46,7 @@ class SQLQueryService:
             
             all_files = csv_files + xlsx_files + xls_files
             
-            self.logger.info(f"Loading {len(all_files)} files into database...")
+            self.logger.info(f"Loading {len(all_files)} files into PostgreSQL database...")
             
             for file_path in all_files:
                 try:
@@ -66,8 +68,8 @@ class SQLQueryService:
                         self.logger.warning(f"Skipping empty file: {file_path.name}")
                         continue
                     
-                    # Load into SQLite
-                    df.to_sql(table_name, conn, index=False, if_exists='replace')
+                    # Load into PostgreSQL using pandas to_sql
+                    df.to_sql(table_name, conn, index=False, if_exists='replace', method='multi')
                     
                     # Track loaded table
                     loaded_tables[table_name] = {
@@ -453,11 +455,12 @@ class SQLQueryService:
                 if 'LIMIT' not in sql_query.upper():
                     sql_query = f"{sql_query} LIMIT {limit}"
             
-            cursor.execute(sql_query)
-            results = cursor.fetchall()
+            # Execute using SQLAlchemy text() for PostgreSQL
+            result_set = conn.execute(text(sql_query))
+            results = result_set.fetchall()
             
             # Get column names
-            column_names = [description[0] for description in cursor.description] if cursor.description else []
+            column_names = list(result_set.keys()) if result_set.keys() else []
             
             # Format results as list of dictionaries (same as your current format)
             formatted_data = [dict(zip(column_names, row)) for row in results]
@@ -504,3 +507,146 @@ class SQLQueryService:
                 "execution_time": execution_time,
                 "error": error_msg
             }
+    
+    def save_query_results_as_table(self, table_name: str, data: List[Dict], columns: List[str], sql_query: str) -> Dict:
+        """
+        Save query results as a new table in the PostgreSQL database
+        """
+        import time
+        start_time = time.time()
+        
+        try:
+            self.logger.info(f"Saving query results as table '{table_name}' with {len(data)} rows")
+            
+            # Create database connection
+            conn = self._get_database_connection()
+            
+            # Validate table name
+            if not self._is_valid_table_name(table_name):
+                raise ValueError(f"Invalid table name: {table_name}. Use only letters, numbers, and underscores.")
+            
+            # Check if table already exists
+            if db_manager.table_exists(table_name):
+                raise ValueError(f"Table '{table_name}' already exists. Please choose a different name.")
+            
+            # Create table schema
+            create_table_sql = self._create_table_schema(table_name, columns, data)
+            self.logger.info(f"Creating table with SQL: {create_table_sql}")
+            conn.execute(text(create_table_sql))
+            
+            # Insert data using pandas for better performance
+            if data:
+                self.logger.info(f"Inserting {len(data)} rows into {table_name}")
+                
+                # Convert data to DataFrame
+                df = pd.DataFrame(data)
+                
+                # Insert data using pandas to_sql
+                df.to_sql(table_name, conn, index=False, if_exists='append', method='multi')
+            
+            # Create metadata table entry
+            metadata_sql = text("""
+            INSERT INTO table_metadata 
+            (table_name, source_query, created_at, row_count, column_count, columns)
+            VALUES (:table_name, :sql_query, :created_at, :row_count, :column_count, :columns)
+            """)
+            conn.execute(metadata_sql, {
+                "table_name": table_name,
+                "sql_query": sql_query,
+                "created_at": time.time(),
+                "row_count": len(data),
+                "column_count": len(columns),
+                "columns": ','.join(columns)
+            })
+            
+            # Commit changes
+            conn.commit()
+            
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            
+            result = {
+                "success": True,
+                "table_name": table_name,
+                "rows_inserted": len(data),
+                "message": f"Table '{table_name}' created successfully with {len(data)} rows in {execution_time}"
+            }
+            
+            self.logger.info(f"Table '{table_name}' saved successfully: {len(data)} rows in {execution_time}")
+            
+            # Close connection
+            conn.close()
+            
+            return result
+            
+        except Exception as e:
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"Error saving table: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "success": False,
+                "table_name": table_name,
+                "rows_inserted": 0,
+                "message": error_msg
+            }
+    
+    def _is_valid_table_name(self, table_name: str) -> bool:
+        """Validate table name format"""
+        import re
+        # Table name should start with letter or underscore, contain only letters, numbers, underscores
+        pattern = r'^[a-zA-Z_][a-zA-Z0-9_]*$'
+        return bool(re.match(pattern, table_name))
+    
+    def _create_table_schema(self, table_name: str, columns: List[str], sample_data: List[Dict]) -> str:
+        """Create CREATE TABLE SQL statement for PostgreSQL"""
+        if not sample_data:
+            # If no data, create all columns as TEXT
+            column_definitions = [f'"{col}" TEXT' for col in columns]
+        else:
+            # Analyze sample data to determine column types
+            column_definitions = []
+            for col in columns:
+                col_type = self._infer_column_type(sample_data, col)
+                column_definitions.append(f'"{col}" {col_type}')
+        
+        # Add metadata columns for PostgreSQL
+        column_definitions.extend([
+            'id SERIAL PRIMARY KEY',
+            'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+        ])
+        
+        return f'CREATE TABLE "{table_name}" ({", ".join(column_definitions)})'
+    
+    def _infer_column_type(self, sample_data: List[Dict], column: str) -> str:
+        """Infer PostgreSQL column type from sample data"""
+        if not sample_data:
+            return 'TEXT'
+        
+        # Check first 10 non-null values
+        sample_values = []
+        for row in sample_data[:10]:
+            value = row.get(column)
+            if value is not None and value != '':
+                sample_values.append(value)
+        
+        if not sample_values:
+            return 'TEXT'
+        
+        # Check if all values are integers
+        try:
+            for val in sample_values:
+                int(val)
+            return 'INTEGER'
+        except (ValueError, TypeError):
+            pass
+        
+        # Check if all values are floats
+        try:
+            for val in sample_values:
+                float(val)
+            return 'NUMERIC'
+        except (ValueError, TypeError):
+            pass
+        
+        # Default to TEXT
+        return 'TEXT'
