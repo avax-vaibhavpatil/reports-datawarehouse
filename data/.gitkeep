@@ -1,0 +1,9 @@
+# This file keeps the data directory structure in git
+# The actual data files are ignored by .gitignore
+# 
+# Directory structure:
+# data/
+# ├── uploads/     - User uploaded Excel/CSV files (ignored)
+# ├── exports/     - Generated reports and exports (ignored)  
+# ├── backups/     - Database backups (ignored)
+# └── .gitkeep     - This file (tracked) 

@@ -1,0 +1,2 @@
+# Keep backups directory structure
+# Database backups and data snapshots are stored here but ignored by git 
