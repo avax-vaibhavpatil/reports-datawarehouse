@@ -5,6 +5,8 @@ from typing import List, Dict, Optional, Any
 import logging
 from ..services.sql_query_service import SQLQueryService
 
+# SQL Query Routes
+
 class TableConfig(BaseModel):
     name: str
     alias: Optional[str] = None
