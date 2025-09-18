@@ -478,7 +478,14 @@ class SQLQueryService:
             self.logger.info(f"Executing SQL: {sql_query}")
             
             # Step 1: Get total count first (without LIMIT)
-            count_query = f"SELECT COUNT(*) FROM ({sql_query}) AS subquery"
+            # Remove LIMIT clause from the original query for counting
+            count_sql = sql_query
+            if 'LIMIT' in sql_query.upper():
+                # Remove LIMIT clause and everything after it
+                limit_position = sql_query.upper().rfind('LIMIT')
+                count_sql = sql_query[:limit_position].strip()
+            
+            count_query = f"SELECT COUNT(*) FROM ({count_sql}) AS subquery"
             self.logger.info(f"Getting total count...")
             
             cursor.execute(count_query)
