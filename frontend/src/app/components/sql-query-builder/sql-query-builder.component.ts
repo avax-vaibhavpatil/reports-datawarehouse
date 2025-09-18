@@ -9,6 +9,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatDividerModule } from '@angular/material/divider';
+import { FormsModule } from '@angular/forms';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse, SaveTableRequest, SaveTableResponse } from '../../services/sql-query.service';
 
 @Component({
@@ -17,6 +19,7 @@ import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse
   imports: [
     CommonModule,
     ReactiveFormsModule,
+    FormsModule,
     MatSnackBarModule,
     MatCardModule,
     MatButtonModule,
@@ -24,7 +27,8 @@ import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    MatCheckboxModule
+    MatCheckboxModule,
+    MatDividerModule
   ],
   templateUrl: './sql-query-builder.component.html',
   styleUrls: ['./sql-query-builder.component.css']

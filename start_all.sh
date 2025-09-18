@@ -1,4 +1,4 @@
-#!/bin/bash
+gut#!/bin/bash
 
 # Start Both Backend and Frontend Servers
 echo "🚀 Starting Excel Generator - Full Stack Application..."

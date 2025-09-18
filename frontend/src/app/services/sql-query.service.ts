@@ -160,3 +160,4 @@ export interface SaveTableResponse {
   table_name: string;
   rows_inserted: number;
   message: string;
+}

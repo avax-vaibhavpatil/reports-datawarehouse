@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 from sqlalchemy import text, create_engine
-from ..database import db_manager
+from ..simple_database import simple_db_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,8 +31,8 @@ class SQLQueryService:
     def _get_database_connection(self):
         """Get PostgreSQL database connection"""
         # Ensure metadata table exists
-        db_manager.create_metadata_table()
-        return db_manager.get_connection()
+        simple_db_manager.create_metadata_table()
+        return simple_db_manager.get_connection()
     
     def _load_uploaded_files_to_database(self, conn) -> Dict[str, Dict]:
         """Load all uploaded files into the PostgreSQL database"""
@@ -68,8 +68,10 @@ class SQLQueryService:
                         self.logger.warning(f"Skipping empty file: {file_path.name}")
                         continue
                     
-                    # Load into PostgreSQL using pandas to_sql
-                    df.to_sql(table_name, conn, index=False, if_exists='replace', method='multi')
+                    # Load into PostgreSQL using pandas to_sql with SQLAlchemy engine
+                    from sqlalchemy import create_engine
+                    engine = create_engine(simple_db_manager.database_url)
+                    df.to_sql(table_name, engine, index=False, if_exists='replace', method='multi')
                     
                     # Track loaded table
                     loaded_tables[table_name] = {
@@ -455,12 +457,13 @@ class SQLQueryService:
                 if 'LIMIT' not in sql_query.upper():
                     sql_query = f"{sql_query} LIMIT {limit}"
             
-            # Execute using SQLAlchemy text() for PostgreSQL
-            result_set = conn.execute(text(sql_query))
-            results = result_set.fetchall()
+            # Execute using psycopg2 cursor
+            cursor = conn.cursor()
+            cursor.execute(sql_query)
+            results = cursor.fetchall()
             
             # Get column names
-            column_names = list(result_set.keys()) if result_set.keys() else []
+            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
             
             # Format results as list of dictionaries (same as your current format)
             formatted_data = [dict(zip(column_names, row)) for row in results]
@@ -482,7 +485,7 @@ class SQLQueryService:
             
             return result
             
-        except sqlite3.Error as e:
+        except Exception as e:
             execution_time = f"{(time.time() - start_time):.3f}s"
             error_msg = f"SQL Error: {str(e)}"
             self.logger.error(error_msg)
@@ -526,13 +529,14 @@ class SQLQueryService:
                 raise ValueError(f"Invalid table name: {table_name}. Use only letters, numbers, and underscores.")
             
             # Check if table already exists
-            if db_manager.table_exists(table_name):
+            if simple_db_manager.table_exists(table_name):
                 raise ValueError(f"Table '{table_name}' already exists. Please choose a different name.")
             
             # Create table schema
             create_table_sql = self._create_table_schema(table_name, columns, data)
             self.logger.info(f"Creating table with SQL: {create_table_sql}")
-            conn.execute(text(create_table_sql))
+            cursor = conn.cursor()
+            cursor.execute(create_table_sql)
             
             # Insert data using pandas for better performance
             if data:
@@ -545,19 +549,18 @@ class SQLQueryService:
                 df.to_sql(table_name, conn, index=False, if_exists='append', method='multi')
             
             # Create metadata table entry
-            metadata_sql = text("""
+            cursor.execute("""
             INSERT INTO table_metadata 
             (table_name, source_query, created_at, row_count, column_count, columns)
-            VALUES (:table_name, :sql_query, :created_at, :row_count, :column_count, :columns)
-            """)
-            conn.execute(metadata_sql, {
-                "table_name": table_name,
-                "sql_query": sql_query,
-                "created_at": time.time(),
-                "row_count": len(data),
-                "column_count": len(columns),
-                "columns": ','.join(columns)
-            })
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                table_name,
+                sql_query,
+                time.time(),
+                len(data),
+                len(columns),
+                ','.join(columns)
+            ))
             
             # Commit changes
             conn.commit()

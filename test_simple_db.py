@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test Database Connection Script
+Test Simple Database Connection
 """
 
 import os
@@ -10,10 +10,10 @@ from pathlib import Path
 # Add the app directory to Python path
 sys.path.append('app')
 
-def test_database_connection():
-    """Test the database connection"""
-    print("🔍 Testing Database Connection")
-    print("=" * 40)
+def test_simple_database():
+    """Test the simple database connection"""
+    print("🔍 Testing Simple Database Connection")
+    print("=" * 50)
     
     try:
         # Import after adding to path
@@ -62,45 +62,28 @@ def test_database_connection():
             cursor.execute(f"DROP TABLE {test_table_name}")
             print("✅ Test table cleaned up")
         
-        print("\n🎉 Database connection test successful!")
+        print("\n🎉 Simple database connection test successful!")
         print("✅ Your PostgreSQL database is properly configured!")
         return True
         
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
-        print("\n🔧 Please check:")
-        print("1. PostgreSQL is running")
-        print("2. Database 'datawarehouse' exists")
-        print("3. User 'postgres' has proper permissions")
-        print("4. .env file has correct credentials")
-        print("5. Password is correct")
+        import traceback
+        traceback.print_exc()
         return False
 
-def show_configuration_help():
-    """Show configuration help"""
-    print("\n📋 Configuration Help")
-    print("=" * 40)
-    print("1. Make sure PostgreSQL is installed and running")
-    print("2. Create database 'datawarehouse':")
-    print("   sudo -u postgres createdb datawarehouse")
-    print("3. Update .env file with your credentials")
-    print("4. Run this test script again")
-
 if __name__ == "__main__":
-    print("🚀 Database Connection Test")
-    print("=" * 40)
+    print("🚀 Simple Database Connection Test")
+    print("=" * 50)
     
     # Check if .env file exists
     env_file = Path(".env")
     if not env_file.exists():
         print("❌ .env file not found!")
-        print("📝 Please create .env file with your database credentials")
-        show_configuration_help()
         sys.exit(1)
     
     # Test connection
-    if test_database_connection():
+    if test_simple_database():
         print("\n✅ All tests passed! Your database is ready to use.")
     else:
-        print("\n❌ Tests failed. Please fix the issues above.")
-        show_configuration_help()
+        print("\n❌ Tests failed. Please check the error above.")

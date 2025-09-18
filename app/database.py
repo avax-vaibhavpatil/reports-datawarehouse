@@ -31,13 +31,14 @@ class DatabaseManager:
                 'password': os.getenv('DB_PASSWORD', 'password')
             }
             
-            # Create connection string
+            # Use TCP connection with password (more reliable)
             connection_string = (
                 f"postgresql://{db_config['user']}:{db_config['password']}"
                 f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
             )
+            logger.info(f"Connecting to PostgreSQL: postgresql://{db_config['user']}:*****@{db_config['host']}:{db_config['port']}/{db_config['database']}")
             
-            # Create engine
+            # Create engine with proper connection parameters
             self.engine = create_engine(
                 connection_string,
                 poolclass=NullPool,  # Use NullPool for stateless operations
