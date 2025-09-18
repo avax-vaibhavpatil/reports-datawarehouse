@@ -1,0 +1,149 @@
+<div class="schema-editor-dialog">
+  <h2 mat-dialog-title>
+    <mat-icon>storage</mat-icon>
+    Save to Data Warehouse
+  </h2>
+  
+  <mat-dialog-content class="dialog-content">
+    <!-- Query Summary -->
+    <mat-card class="summary-card">
+      <mat-card-content>
+        <p><strong>Query Results:</strong> {{ data.totalRows | number }} records</p>
+        <p><strong>Columns:</strong> {{ data.columns.length }} columns</p>
+      </mat-card-content>
+    </mat-card>
+
+    <form [formGroup]="schemaForm" class="schema-form">
+      <!-- Table Configuration Section -->
+      <mat-card class="config-card">
+        <mat-card-header>
+          <mat-card-title>Table Configuration</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <!-- Schema Selection -->
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Database Schema</mat-label>
+            <mat-select formControlName="schema">
+              <mat-option value="processed_data">processed_data (Query Results)</mat-option>
+              <mat-option value="raw_data">raw_data (Original Data)</mat-option>
+              <mat-option value="reports">reports (Business Reports)</mat-option>
+              <mat-option value="temp">temp (Temporary Tables)</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <!-- Table Name Input -->
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Table Name</mat-label>
+            <input matInput 
+                   formControlName="tableName" 
+                   placeholder="Enter table name (e.g., monthly_sales_report)"
+                   [class.validating]="isValidating">
+            <mat-icon matSuffix *ngIf="isValidating">
+              <mat-spinner diameter="20"></mat-spinner>
+            </mat-icon>
+            <mat-icon matSuffix *ngIf="!isValidating && schemaForm.get('tableName')?.valid && schemaPreview?.can_create" color="primary">
+              check_circle
+            </mat-icon>
+            <mat-icon matSuffix *ngIf="!isValidating && schemaForm.get('tableName')?.invalid" color="warn">
+              error
+            </mat-icon>
+            <mat-hint>Use lowercase letters, numbers, and underscores only</mat-hint>
+            <mat-error>{{ getTableNameError() }}</mat-error>
+          </mat-form-field>
+
+          <!-- Table Exists Warning -->
+          <div *ngIf="schemaPreview?.table_exists?.exists" class="warning-message">
+            <mat-icon color="warn">warning</mat-icon>
+            <span>{{ schemaPreview?.table_exists?.message }}</span>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- Column Schema Section -->
+      <mat-card class="schema-card" *ngIf="schemaPreview && schemaPreview.columns">
+        <mat-card-header>
+          <mat-card-title>Column Schema Review</mat-card-title>
+          <mat-card-subtitle>Review and edit column data types before creating the table</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="columns-container">
+            <div class="column-header">
+              <span class="col-name">Column Name</span>
+              <span class="col-detected">Auto-Detected</span>
+              <span class="col-type">PostgreSQL Type</span>
+              <span class="col-sample">Sample Values</span>
+            </div>
+            
+            <div *ngFor="let column of schemaPreview.columns; let i = index" class="column-row">
+              <!-- Column Name -->
+              <div class="col-name">
+                <strong>{{ column.original_name }}</strong>
+                <small *ngIf="column.clean_name !== column.original_name">
+                  ({{ column.clean_name }})
+                </small>
+              </div>
+
+              <!-- Detected Type -->
+              <div class="col-detected">
+                <mat-chip class="detected-chip">{{ column.detected_type }}</mat-chip>
+              </div>
+
+              <!-- PostgreSQL Type Selector -->
+              <div class="col-type">
+                <mat-form-field appearance="outline" class="type-field">
+                  <mat-select [value]="column.suggested_pg_type" 
+                             (selectionChange)="updateColumnType(i, $event.value)">
+                    <mat-option *ngFor="let type of postgresDataTypes" [value]="type">
+                      {{ type }}
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
+              </div>
+
+              <!-- Sample Values -->
+              <div class="col-sample">
+                <span *ngFor="let value of column.sample_values.slice(0, 2); let last = last" class="sample-value">
+                  {{ value }}<span *ngIf="!last">, </span>
+                </span>
+                <span *ngIf="column.sample_values.length > 2" class="more-values">...</span>
+              </div>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- CREATE TABLE Preview -->
+      <mat-card class="sql-card" *ngIf="schemaPreview?.create_sql">
+        <mat-card-header>
+          <mat-card-title>CREATE TABLE Statement</mat-card-title>
+          <mat-card-subtitle>This SQL will be executed to create your table</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <pre class="sql-preview">{{ schemaPreview?.create_sql }}</pre>
+        </mat-card-content>
+      </mat-card>
+    </form>
+
+    <!-- Loading State -->
+    <div *ngIf="isLoading" class="loading-container">
+      <mat-spinner></mat-spinner>
+      <p>Generating schema preview...</p>
+    </div>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end" class="dialog-actions">
+    <button mat-button (click)="onCancel()">
+      <mat-icon>cancel</mat-icon>
+      Cancel
+    </button>
+    
+    <button mat-raised-button 
+            color="primary" 
+            (click)="onSave()" 
+            [disabled]="!canCreateTable()"
+            class="save-button">
+      <mat-icon>save</mat-icon>
+      Create Table ({{ data.totalRows | number }} records)
+    </button>
+  </mat-dialog-actions>
+</div> 

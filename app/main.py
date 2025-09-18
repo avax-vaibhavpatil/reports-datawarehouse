@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routes import file_routes, relationship_routes, column_mapping_routes, sql_query_routes
+from .routes import file_routes, relationship_routes, column_mapping_routes, sql_query_routes, schema_editor_routes
 import logging
 
 # Configure logging
@@ -31,6 +31,7 @@ app.include_router(file_routes.router)
 app.include_router(relationship_routes.router)
 app.include_router(column_mapping_routes.router)
 app.include_router(sql_query_routes.router)
+app.include_router(schema_editor_routes.router)
 
 @app.on_event("startup")
 async def startup_event():
