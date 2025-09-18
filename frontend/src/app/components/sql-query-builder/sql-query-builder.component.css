@@ -349,6 +349,20 @@
 
 .results-actions {
   margin-bottom: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.warehouse-button {
+  background: linear-gradient(45deg, #1976d2, #42a5f5) !important;
+  color: white !important;
+  font-weight: 500;
+}
+
+.warehouse-button:hover {
+  background: linear-gradient(45deg, #1565c0, #1976d2) !important;
+  box-shadow: 0 4px 8px rgba(25, 118, 210, 0.3);
 }
 
 .results-table-container {

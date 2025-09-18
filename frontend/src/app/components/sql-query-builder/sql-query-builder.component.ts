@@ -9,7 +9,9 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatDialog } from '@angular/material/dialog';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
+import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
 
 @Component({
   selector: 'app-sql-query-builder',
@@ -47,7 +49,8 @@ export class SQLQueryBuilderComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private sqlQueryService: SQLQueryService,
-    private snackBar: MatSnackBar
+    private snackBar: MatSnackBar,
+    private dialog: MatDialog
   ) {
     this.queryForm = this.createForm();
   }
@@ -596,6 +599,47 @@ export class SQLQueryBuilderComponent implements OnInit {
     window.URL.revokeObjectURL(url);
     
     this.snackBar.open('Data exported to CSV successfully!', 'Close', { duration: 2000 });
+  }
+
+  openSchemaEditor(): void {
+    // Check if we have query results to work with
+    if (!this.generatedSQL || this.queryResults.length === 0) {
+      this.snackBar.open('Please execute a query first to save results to warehouse', 'Close', { duration: 3000 });
+      return;
+    }
+
+    // Prepare data for the schema editor dialog
+    const dialogData: SchemaEditorData = {
+      sql: this.generatedSQL,
+      totalRows: this.totalRows,
+      columns: this.queryColumns,
+      sampleData: this.queryResults.slice(0, 5)
+    };
+
+    // Open the schema editor dialog
+    const dialogRef = this.dialog.open(SchemaEditorDialogComponent, {
+      width: '90vw',
+      maxWidth: '900px',
+      maxHeight: '90vh',
+      data: dialogData,
+      disableClose: true // Prevent accidental closing
+    });
+
+    // Handle dialog result
+    dialogRef.afterClosed().subscribe(result => {
+      if (result?.success) {
+        // Table was successfully created and data inserted
+        this.snackBar.open(
+          `🎉 Data Warehouse Updated! Table "${result.tableName}" now contains ${result.totalRows?.toLocaleString()} records from your query.`, 
+          'Close', 
+          { duration: 6000 }
+        );
+        console.log('Table Creation Success:', result.insertionStats);
+      } else if (result) {
+        // Dialog was closed with some result but not successful
+        console.log('Schema Editor Result:', result);
+      }
+    });
   }
 
   private convertToCSV(data: any[], columns: string[]): string {

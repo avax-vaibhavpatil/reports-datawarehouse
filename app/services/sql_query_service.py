@@ -403,7 +403,7 @@ class SQLQueryService:
             sql_query = sql_result["sql"]
             
             # Execute the query against uploaded files
-            result_data = self._execute_sql_against_files(sql_query, sample_size)
+            result_data = self.execute_raw_sql(sql_query, sample_size)
 
             if sample_size is None:
                 message = f"Query executed sucsesfully. Showing all {result_data['total_rows']} rows"
@@ -433,7 +433,7 @@ class SQLQueryService:
                 "columns": []
             }
     
-    def _execute_sql_against_files(self, sql_query: str, limit: int = None) -> Dict:
+    def execute_raw_sql(self, sql_query: str, limit: int = None) -> Dict:
         """Execute SQL query against uploaded CSV/Excel files using SQLite"""
         import time
         start_time = time.time()
