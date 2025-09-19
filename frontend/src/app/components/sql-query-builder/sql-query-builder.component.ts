@@ -12,6 +12,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
 import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
+import { ColumnMatchingService, ColumnRelationship } from '../../services/column-matching.service';
 
 @Component({
   selector: 'app-sql-query-builder',
@@ -50,7 +51,8 @@ export class SQLQueryBuilderComponent implements OnInit {
     private fb: FormBuilder,
     private sqlQueryService: SQLQueryService,
     private snackBar: MatSnackBar,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private columnMatchingService: ColumnMatchingService
   ) {
     this.queryForm = this.createForm();
   }
@@ -184,6 +186,8 @@ export class SQLQueryBuilderComponent implements OnInit {
       type: ['INNER JOIN', Validators.required],
       table: ['', Validators.required],
       alias: [''],
+      left_table: [''],
+      right_table: [''],
       columns: this.fb.array([]),
       selectAll: [false],
       conditions: this.fb.array([])
@@ -640,6 +644,107 @@ export class SQLQueryBuilderComponent implements OnInit {
         console.log('Schema Editor Result:', result);
       }
     });
+  }
+
+  /**
+   * Suggest column relationships for a specific join
+   */
+  suggestColumnRelationships(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex);
+    const leftTable = joinForm.get('left_table')?.value;
+    const rightTable = joinForm.get('right_table')?.value;
+    
+    if (!leftTable || !rightTable) {
+      this.snackBar.open('Please select both left and right tables first', 'Close', { duration: 3000 });
+      return;
+    }
+
+    this.isLoading = true;
+    
+    this.columnMatchingService.suggestRelationships({
+      left_table: leftTable,
+      right_table: rightTable
+    }).subscribe({
+      next: (response) => {
+        this.isLoading = false;
+        if (response.success && response.relationships.length > 0) {
+          this.applySuggestedRelationships(joinIndex, response.relationships);
+          this.snackBar.open(
+            `Found ${response.total_matches} matching columns! Relationships added automatically.`, 
+            'Close', 
+            { duration: 4000 }
+          );
+        } else {
+          this.snackBar.open('No matching columns found between these tables', 'Close', { duration: 3000 });
+        }
+      },
+      error: (error) => {
+        this.isLoading = false;
+        console.error('Error suggesting relationships:', error);
+        this.snackBar.open('Error suggesting relationships. Please try again.', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  /**
+   * Apply suggested relationships to a join
+   */
+  private applySuggestedRelationships(joinIndex: number, relationships: ColumnRelationship[]): void {
+    const joinForm = this.joinsArray.at(joinIndex);
+    const conditionsArray = joinForm.get('conditions') as FormArray;
+    
+    // Clear existing conditions
+    while (conditionsArray.length !== 0) {
+      conditionsArray.removeAt(0);
+    }
+    
+    // Add suggested relationships
+    relationships.forEach(relationship => {
+      const conditionGroup = this.fb.group({
+        left_table: [relationship.left_table],
+        left_column: [relationship.left_column],
+        operator: ['='],
+        right_table: [relationship.right_table],
+        right_column: [relationship.right_column]
+      });
+      
+      conditionsArray.push(conditionGroup);
+    });
+  }
+
+  /**
+   * Auto-suggest relationships when tables are selected
+   */
+  onTableSelectionChange(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex);
+    const leftTable = joinForm.get('left_table')?.value;
+    const rightTable = joinForm.get('right_table')?.value;
+    
+    // Only suggest if both tables are selected and no conditions exist yet
+    if (leftTable && rightTable) {
+      const conditionsArray = joinForm.get('conditions') as FormArray;
+      if (conditionsArray.length === 0) {
+        // Auto-suggest after a short delay to avoid too many requests
+        setTimeout(() => {
+          this.suggestColumnRelationships(joinIndex);
+        }, 500);
+      }
+    }
+  }
+
+  /**
+   * Clear all suggested relationships for a join
+   */
+  clearSuggestedRelationships(joinIndex: number): void {
+    const joinForm = this.joinsArray.at(joinIndex);
+    const conditionsArray = joinForm.get('conditions') as FormArray;
+    
+    // Clear all conditions
+    while (conditionsArray.length !== 0) {
+      conditionsArray.removeAt(0);
+    }
+    
+    this.snackBar.open('All relationships cleared', 'Close', { duration: 2000 });
   }
 
   private convertToCSV(data: any[], columns: string[]): string {

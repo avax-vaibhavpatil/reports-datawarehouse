@@ -178,7 +178,16 @@ class SQLQueryService:
         
         # Process main tables
         for table in tables:
-            table_alias = table.get("alias", table["name"])
+            table_alias = table.get("alias") or ""
+            if isinstance(table_alias, str):
+                table_alias = table_alias.strip()
+            else:
+                table_alias = ""
+            
+            # Use table name if no alias or alias is "None"
+            if not table_alias or table_alias == "None":
+                table_alias = table["name"]
+            
             table_columns = table.get("columns", [])
             custom_expressions = table.get("custom_expressions", [])
             
@@ -197,7 +206,16 @@ class SQLQueryService:
         # Process joined tables
         if joins:
             for join in joins:
-                join_alias = join.get("alias", join["table"])
+                join_alias = join.get("alias") or ""
+                if isinstance(join_alias, str):
+                    join_alias = join_alias.strip()
+                else:
+                    join_alias = ""
+                
+                # Use table name if no alias or alias is "None"
+                if not join_alias or join_alias == "None":
+                    join_alias = join["table"]
+                
                 join_columns = join.get("columns", [])
                 join_custom_expressions = join.get("custom_expressions", [])
                 
@@ -218,9 +236,16 @@ class SQLQueryService:
         
         first_table = tables[0]
         table_name = first_table["name"]
-        table_alias = first_table.get("alias", table_name)
+        table_alias = first_table.get("alias") or ""
+        if isinstance(table_alias, str):
+            table_alias = table_alias.strip()
+        else:
+            table_alias = ""
         
-        return f"FROM {table_name} {table_alias}"
+        if table_alias and table_alias != "None":
+            return f"FROM {table_name} {table_alias}"
+        else:
+            return f"FROM {table_name}"
     
     def _build_join_clauses(self, joins: List[Dict]) -> str:
         """Build JOIN clauses"""
@@ -232,7 +257,11 @@ class SQLQueryService:
         for join in joins:
             join_type = join.get("type", "INNER JOIN")
             table_name = join["table"]
-            table_alias = join.get("alias", table_name)
+            table_alias = join.get("alias") or ""
+            if isinstance(table_alias, str):
+                table_alias = table_alias.strip()
+            else:
+                table_alias = ""
             conditions = join.get("conditions", [])
             
             if not conditions:
@@ -252,7 +281,11 @@ class SQLQueryService:
                 )
             
             join_condition = " AND ".join(condition_parts)
-            join_statements.append(f"{join_type} {table_name} {table_alias} ON {join_condition}")
+            
+            if table_alias and table_alias != "None":
+                join_statements.append(f"{join_type} {table_name} {table_alias} ON {join_condition}")
+            else:
+                join_statements.append(f"{join_type} {table_name} ON {join_condition}")
         
         return "\n".join(join_statements)
     

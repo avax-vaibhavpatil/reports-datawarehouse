@@ -41,6 +41,68 @@
   font-size: 14px;
 }
 
+/* Table Selection Section */
+.table-selection-section {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.table-selection-section h4 {
+  color: #1976d2;
+  margin-bottom: 16px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.table-selection-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.table-selection-field {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Auto-Suggestion Controls */
+.auto-suggestion-controls {
+  background-color: #e8f5e8;
+  border: 1px solid #4caf50;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.suggestion-buttons {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.suggestion-buttons button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suggestion-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.suggestion-info mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
 /* Table Configuration */
 .table-config {
   border: 1px solid #e0e0e0;

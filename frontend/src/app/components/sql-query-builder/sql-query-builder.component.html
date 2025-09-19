@@ -113,7 +113,7 @@
 
               <mat-form-field appearance="outline" class="join-table-field">
                 <mat-label>Table</mat-label>
-                <mat-select formControlName="table" (selectionChange)="onJoinTableChange(i)">
+                <mat-select formControlName="table" (selectionChange)="onJoinTableChange(i); onTableSelectionChange(i)">
                   <mat-option *ngFor="let table of availableTables" [value]="table.name">
                     {{ table.name }} ({{ table.row_count }} rows)
                   </mat-option>
@@ -130,24 +130,47 @@
               </button>
             </div>
 
-            <!-- Select All Header for Join Columns -->
-            <div class="select-all-header" *ngIf="getJoinTableColumns(i).length > 0">
-              <mat-checkbox 
-                [formControlName]="'selectAll'"
-                (change)="toggleSelectAllJoinColumns(i)"
-                class="select-all-checkbox">
-                <strong>Select All Columns</strong>
-              </mat-checkbox>
+            <!-- Table Selection for Auto-Suggestion -->
+            <div class="table-selection-section">
+              <h4>Select Tables for Auto-Suggestion</h4>
+              <div class="table-selection-row">
+                <mat-form-field appearance="outline" class="table-selection-field">
+                  <mat-label>Left Table</mat-label>
+                  <mat-select formControlName="left_table" (selectionChange)="onTableSelectionChange(i)">
+                    <mat-option *ngFor="let table of availableTables" [value]="table.name">
+                      {{ table.name }} ({{ table.row_count }} rows)
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
+                
+                <mat-form-field appearance="outline" class="table-selection-field">
+                  <mat-label>Right Table</mat-label>
+                  <mat-select formControlName="right_table" (selectionChange)="onTableSelectionChange(i)">
+                    <mat-option *ngFor="let table of availableTables" [value]="table.name">
+                      {{ table.name }} ({{ table.row_count }} rows)
+                    </mat-option>
+                  </mat-select>
+                </mat-form-field>
+              </div>
             </div>
 
-            <!-- Individual Join Columns -->
-            <div formArrayName="columns" class="columns-section" *ngIf="getJoinTableColumns(i).length > 0">
-              <div *ngFor="let column of getJoinColumnsArray(i).controls; let j = index" class="column-item">
-                <mat-checkbox 
-                  [formControlName]="j"
-                  (change)="onIndividualJoinColumnChange(i)">
-                  {{ getJoinTableColumns(i)[j] }}
-                </mat-checkbox>
+            <!-- Auto-Suggestion Controls -->
+            <div class="auto-suggestion-controls" *ngIf="join.get('left_table')?.value && join.get('right_table')?.value">
+              <div class="suggestion-buttons">
+                <button type="button" mat-stroked-button color="primary" (click)="suggestColumnRelationships(i)" [disabled]="isLoading">
+                  <mat-icon>auto_fix_high</mat-icon>
+                  {{ isLoading ? 'Suggesting...' : 'Auto-Suggest Relationships' }}
+                </button>
+                <button type="button" mat-stroked-button color="warn" (click)="clearSuggestedRelationships(i)">
+                  <mat-icon>clear_all</mat-icon>
+                  Clear All
+                </button>
+              </div>
+              <div class="suggestion-info" *ngIf="getJoinConditionsArray(i).length > 0">
+                <small class="text-muted">
+                  <mat-icon>info</mat-icon>
+                  {{ getJoinConditionsArray(i).length }} relationship(s) defined
+                </small>
               </div>
             </div>
 
