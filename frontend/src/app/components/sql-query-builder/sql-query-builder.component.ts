@@ -9,7 +9,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatDialog } from '@angular/material/dialog';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
 import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
 import { ColumnMatchingService, ColumnRelationship } from '../../services/column-matching.service';
@@ -27,7 +27,8 @@ import { ColumnMatchingService, ColumnRelationship } from '../../services/column
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    MatCheckboxModule
+    MatCheckboxModule,
+    MatDialogModule
   ],
   templateUrl: './sql-query-builder.component.html',
   styleUrls: ['./sql-query-builder.component.css']

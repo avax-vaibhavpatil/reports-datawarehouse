@@ -199,6 +199,15 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
             <mat-icon>build</mat-icon>
             SQL Query Builder
           </button>
+          
+          <button 
+            mat-stroked-button 
+            color="primary"
+            (click)="loadFilesMetadata()"
+            class="refresh-btn">
+            <mat-icon>refresh</mat-icon>
+            Refresh Files
+          </button>
         </mat-card-actions>
         
         <mat-card-content>
@@ -450,9 +459,21 @@ import { FileService, FileMetadata, UploadResponse } from '../../services/file.s
     }
 
     .column-selection-btn,
-    .sql-query-btn {
+    .sql-query-btn,
+    .refresh-btn {
       margin: 8px;
       min-width: 180px;
+    }
+    
+    .refresh-btn {
+      background: linear-gradient(45deg, #4caf50, #66bb6a);
+      color: white;
+    }
+    
+    .refresh-btn:hover {
+      background: linear-gradient(45deg, #43a047, #5cb85c);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
     }
 
     .sql-query-btn {
@@ -595,12 +616,19 @@ export class FileUploadComponent implements OnInit {
   }
 
   loadFilesMetadata(): void {
+    console.log('🔄 Loading files metadata...');
     this.fileService.getFilesMetadata().subscribe({
       next: (response) => {
+        console.log('📁 Files metadata loaded:', response);
         this.filesMetadata = response.files;
+        console.log(`✅ Loaded ${this.filesMetadata.length} files`);
+        
+        // Debug: Check for Excel files
+        const excelFiles = this.filesMetadata.filter(f => f.filename.endsWith('.xlsx') || f.filename.endsWith('.xls'));
+        console.log(`📊 Excel files found: ${excelFiles.length}`, excelFiles.map(f => f.filename));
       },
       error: (error) => {
-        console.error('Error loading metadata:', error);
+        console.error('❌ Error loading metadata:', error);
         this.showNotification('Failed to load file metadata', 'error');
       }
     });

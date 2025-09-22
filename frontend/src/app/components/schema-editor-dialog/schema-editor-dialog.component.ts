@@ -82,8 +82,8 @@ export class SchemaEditorDialogComponent implements OnInit {
   
   // PostgreSQL data type options
   postgresDataTypes = [
-    'VARCHAR(10)', 'VARCHAR(25)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)',
-    'TEXT', 'INTEGER', 'BIGINT', 'SMALLINT', 
+    'TEXT', 'VARCHAR(10)', 'VARCHAR(25)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)',
+    'INTEGER', 'BIGINT', 'SMALLINT', 
     'DECIMAL(10,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
     'DOUBLE PRECISION', 'REAL', 'BOOLEAN', 
     'DATE', 'TIMESTAMP', 'TIME'
@@ -188,6 +188,13 @@ export class SchemaEditorDialogComponent implements OnInit {
           this.isLoading = false;
           this.schemaPreview = response;
           
+          // Ensure backend suggested types are properly mapped to frontend options
+          if (response.success && response.columns) {
+            response.columns.forEach(column => {
+              column.suggested_pg_type = this.mapBackendTypeToFrontend(column.suggested_pg_type);
+            });
+          }
+          
           if (!response.success) {
             this.snackBar.open('Error generating schema preview', 'Close', { duration: 3000 });
           }
@@ -198,6 +205,33 @@ export class SchemaEditorDialogComponent implements OnInit {
           this.snackBar.open('Error connecting to backend', 'Close', { duration: 3000 });
         }
       });
+  }
+
+  /**
+   * Map backend suggested types to frontend dropdown options
+   */
+  private mapBackendTypeToFrontend(backendType: string): string {
+    // If the backend type is already in our dropdown, use it
+    if (this.postgresDataTypes.includes(backendType)) {
+      return backendType;
+    }
+    
+    // Map common backend types to frontend options
+    const typeMapping: { [key: string]: string } = {
+      'TEXT': 'TEXT',
+      'VARCHAR': 'VARCHAR(255)', // Default to largest VARCHAR if no length specified
+      'INTEGER': 'INTEGER',
+      'BIGINT': 'BIGINT',
+      'SMALLINT': 'SMALLINT',
+      'DOUBLE PRECISION': 'DOUBLE PRECISION',
+      'REAL': 'REAL',
+      'BOOLEAN': 'BOOLEAN',
+      'TIMESTAMP': 'TIMESTAMP',
+      'DATE': 'DATE',
+      'TIME': 'TIME'
+    };
+    
+    return typeMapping[backendType] || 'TEXT'; // Default to TEXT for unknown types
   }
 
   /**

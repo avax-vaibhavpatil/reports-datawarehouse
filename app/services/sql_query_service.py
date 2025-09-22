@@ -401,17 +401,22 @@ class SQLQueryService:
                     # Read file to get columns
                     try:
                         if file_path.suffix.lower() == '.csv':
-                            df = pd.read_csv(file_path)
+                            df = pd.read_csv(file_path, low_memory=False)
                         elif file_path.suffix.lower() in ['.xlsx', '.xls']:
                             # Try different engines for Excel files
                             try:
                                 df = pd.read_excel(file_path, engine='openpyxl')
-                            except:
+                            except Exception as e1:
                                 try:
                                     df = pd.read_excel(file_path, engine='xlrd')
-                                except:
-                                    # Fallback to default engine
-                                    df = pd.read_excel(file_path)
+                                except Exception as e2:
+                                    try:
+                                        # Try reading as CSV if Excel fails
+                                        df = pd.read_csv(file_path, low_memory=False)
+                                        self.logger.warning(f"Excel file {file_path.name} read as CSV due to format issues")
+                                    except Exception as e3:
+                                        self.logger.error(f"Could not read {file_path.name} with any method: {e1}, {e2}, {e3}")
+                                        continue
                         
                         tables.append({
                             "name": file_path.stem,

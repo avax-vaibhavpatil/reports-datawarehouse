@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .file { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .excel { background-color: #e8f5e8; }
+        .csv { background-color: #e8f0ff; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Frontend Backend Test</h1>
+    <button onclick="loadFiles()">Load Files</button>
+    <div id="status"></div>
+    <div id="files"></div>
+
+    <script>
+        async function loadFiles() {
+            const statusDiv = document.getElementById('status');
+            const filesDiv = document.getElementById('files');
+            
+            try {
+                statusDiv.innerHTML = '<p>Loading files...</p>';
+                
+                const response = await fetch('http://localhost:8000/api/files/metadata');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                statusDiv.innerHTML = `<p class="success">✅ Successfully loaded ${data.total_files} files</p>`;
+                
+                filesDiv.innerHTML = '';
+                
+                data.files.forEach(file => {
+                    const fileDiv = document.createElement('div');
+                    fileDiv.className = `file ${file.filename.endsWith('.xlsx') || file.filename.endsWith('.xls') ? 'excel' : 'csv'}`;
+                    
+                    const isExcel = file.filename.endsWith('.xlsx') || file.filename.endsWith('.xls');
+                    const icon = isExcel ? '📊' : '📋';
+                    
+                    fileDiv.innerHTML = `
+                        <strong>${icon} ${file.filename}</strong><br>
+                        <small>Columns: ${file.columns.length} | Type: ${isExcel ? 'Excel' : 'CSV'}</small>
+                    `;
+                    
+                    filesDiv.appendChild(fileDiv);
+                });
+                
+                // Count Excel files
+                const excelFiles = data.files.filter(f => f.filename.endsWith('.xlsx') || f.filename.endsWith('.xls'));
+                statusDiv.innerHTML += `<p class="success">📊 Excel files: ${excelFiles.length}</p>`;
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+                console.error('Error:', error);
+            }
+        }
+        
+        // Auto-load on page load
+        window.onload = loadFiles;
+    </script>
+</body>
+</html>

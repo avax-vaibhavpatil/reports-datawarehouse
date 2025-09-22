@@ -52,14 +52,14 @@ class FileService:
             if file_path.endswith(('.xlsx', '.xls')):
                 logger.info("Reading Excel file headers...")
                 try:
-                    df = pd.read_excel(file_path, nrows=0)
+                    df = pd.read_excel(file_path, nrows=0, engine='openpyxl')
                 except Exception as e:
                     logger.warning(f"Excel reading failed: {e}")
                     # Check if file is actually a CSV with wrong extension
                     if "Excel file format cannot be determined" in str(e) or "not a zip file" in str(e):
                         logger.info("File appears to be CSV with wrong extension, trying CSV method...")
                         try:
-                            df = pd.read_csv(file_path, nrows=0)
+                            df = pd.read_csv(file_path, nrows=0, low_memory=False)
                             logger.info("Successfully read as CSV file")
                         except Exception as csv_e:
                             logger.error(f"CSV method also failed: {csv_e}")
@@ -67,15 +67,15 @@ class FileService:
                     else:
                         # Try alternative Excel engines
                         try:
-                            logger.info("Trying openpyxl engine...")
-                            df = pd.read_excel(file_path, nrows=0, engine='openpyxl')
-                        except Exception as openpyxl_e:
-                            logger.error(f"Openpyxl engine failed: {openpyxl_e}")
+                            logger.info("Trying xlrd engine...")
+                            df = pd.read_excel(file_path, nrows=0, engine='xlrd')
+                        except Exception as xlrd_e:
+                            logger.error(f"Xlrd engine failed: {xlrd_e}")
                             return []
                             
             elif file_path.endswith('.csv'):
                 logger.info("Reading CSV file headers...")
-                df = pd.read_csv(file_path, nrows=0)
+                df = pd.read_csv(file_path, nrows=0, low_memory=False)
             else:
                 logger.warning(f"Unsupported file type: {file_path}")
                 return []

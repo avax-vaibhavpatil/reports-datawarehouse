@@ -94,6 +94,22 @@ print_status "Creating data directories..."
 mkdir -p data/uploads
 mkdir -p data
 
+# Setup PostgreSQL Database
+print_status "Setting up PostgreSQL database..."
+if command -v psql &> /dev/null; then
+    print_status "PostgreSQL detected. Setting up database..."
+    python3 setup_database.py
+    print_success "Database setup complete!"
+else
+    print_warning "PostgreSQL not detected. Please install PostgreSQL first:"
+    echo "  Ubuntu/Debian: sudo apt update && sudo apt install postgresql postgresql-contrib"
+    echo "  macOS: brew install postgresql"
+    echo "  Windows: Download from https://www.postgresql.org/download/"
+    echo ""
+    print_warning "You can still run the application, but data warehouse features will not work."
+    echo "Run 'python3 setup_database.py' after installing PostgreSQL."
+fi
+
 print_success "Backend setup complete!"
 
 # Setup Frontend
