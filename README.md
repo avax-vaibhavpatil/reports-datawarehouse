@@ -6,6 +6,7 @@ A modern full-stack application for uploading Excel files, extracting column met
 
 - **Frontend**: Angular 20 + Angular Material UI
 - **Backend**: FastAPI (Python 3.12+)
+- **Web Server**: Gunicorn with Uvicorn workers
 - **Database**: DuckDB (for Excel/CSV processing)
 - **File Processing**: Excel/CSV reading with column extraction
 
@@ -77,9 +78,21 @@ excel_generator/
    ```
 
 4. **Start the FastAPI server:**
+
+   **Option A: Using Gunicorn (Recommended for Production)**
+   ```bash
+   ./start_gunicorn.sh
+   ```
+
+   **Option B: Using Uvicorn (Development)**
    ```bash
    cd app
    python main.py
+   ```
+
+   **Option C: Direct Gunicorn command**
+   ```bash
+   gunicorn -c gunicorn.conf.py app.main:app
    ```
 
    The API will be available at `http://localhost:8000`
