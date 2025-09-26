@@ -325,3 +325,22 @@ INNER JOIN siscon_bank b
     ]
     
     return JSONResponse(content={"examples": examples}, status_code=200)
+
+@router.post("/recreate-indexes")
+async def recreate_indexes():
+    """Recreate database indexes to improve JOIN performance"""
+    try:
+        service = SQLQueryService()
+        result = service.recreate_indexes_for_existing_data()
+        
+        if result["success"]:
+            return JSONResponse(content=result, status_code=200)
+        else:
+            return JSONResponse(content=result, status_code=500)
+            
+    except Exception as e:
+        logger.error(f"Error recreating indexes: {e}")
+        return JSONResponse(
+            content={"success": False, "error": str(e)},
+            status_code=500
+        )

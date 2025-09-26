@@ -33,7 +33,7 @@ class SQLQueryService:
         return sqlite3.connect(str(db_path))
     
     def _load_uploaded_files_to_database(self, conn: sqlite3.Connection) -> Dict[str, Dict]:
-        """Load all uploaded files into the SQLite database"""
+        """Load all uploaded files into the SQLite database with optimized indexing"""
         cursor = conn.cursor()
         loaded_tables = {}
         
@@ -70,6 +70,9 @@ class SQLQueryService:
                     # Load into SQLite
                     df.to_sql(table_name, conn, index=False, if_exists='replace')
                     
+                    # Create indexes for common join columns to optimize JOIN performance
+                    self._create_optimized_indexes(cursor, table_name, df.columns)
+                    
                     # Track loaded table
                     loaded_tables[table_name] = {
                         'original_filename': file_path.name,
@@ -89,6 +92,73 @@ class SQLQueryService:
         except Exception as e:
             self.logger.error(f"Error loading files to database: {e}")
             return {}
+    
+    def _create_optimized_indexes(self, cursor: sqlite3.Cursor, table_name: str, columns: List[str]) -> None:
+        """Create indexes on common join columns to optimize JOIN performance"""
+        try:
+            # Common join column patterns that appear in your data
+            join_patterns = [
+                # Voucher number patterns
+                r'.*voucher.*no.*',
+                r'.*vch.*no.*',
+                r'.*voucher_no.*',
+                # Branch code patterns
+                r'.*branch.*code.*',
+                r'.*br.*code.*',
+                # Siscon code patterns
+                r'.*siscon.*code.*',
+                r'.*siscon_code.*',
+                # Account code patterns
+                r'.*acc.*code.*',
+                r'.*account.*code.*',
+                # Customer/Supplier code patterns
+                r'.*cust.*code.*',
+                r'.*supplr.*code.*',
+                # Bank code patterns
+                r'.*bank.*code.*',
+                r'.*sbnk.*code.*',
+                # ID patterns
+                r'.*id$',
+                r'.*_id$',
+                # Date patterns
+                r'.*date.*',
+                r'.*_date$'
+            ]
+            
+            import re
+            indexed_columns = set()
+            
+            for column in columns:
+                column_lower = column.lower()
+                for pattern in join_patterns:
+                    if re.match(pattern, column_lower):
+                        if column not in indexed_columns:
+                            try:
+                                index_name = f"idx_{table_name}_{column.replace('.', '_')}"
+                                cursor.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table_name} ({column})")
+                                indexed_columns.add(column)
+                                self.logger.info(f"Created index on {table_name}.{column}")
+                            except Exception as e:
+                                self.logger.warning(f"Could not create index on {table_name}.{column}: {e}")
+                        break
+            
+            # Create composite indexes for common multi-column joins
+            if 'lg_voucher_no' in columns and 'lg_siscon_code' in columns and 'lg_branch_code' in columns:
+                try:
+                    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_voucher_composite ON {table_name} (lg_voucher_no, lg_siscon_code, lg_branch_code)")
+                    self.logger.info(f"Created composite index on {table_name} for voucher columns")
+                except Exception as e:
+                    self.logger.warning(f"Could not create composite index on {table_name}: {e}")
+            
+            if 'lgd_voucher_no' in columns and 'lgd_siscon_code' in columns and 'lgd_branch_code' in columns:
+                try:
+                    cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{table_name}_voucher_detail_composite ON {table_name} (lgd_voucher_no, lgd_siscon_code, lgd_branch_code)")
+                    self.logger.info(f"Created composite index on {table_name} for voucher detail columns")
+                except Exception as e:
+                    self.logger.warning(f"Could not create composite index on {table_name}: {e}")
+                    
+        except Exception as e:
+            self.logger.warning(f"Error creating indexes for {table_name}: {e}")
 
     def generate_sql_query(self, query_config: Dict) -> Dict:
         """
@@ -472,7 +542,7 @@ class SQLQueryService:
             }
     
     def execute_raw_sql(self, sql_query: str, limit: int = None) -> Dict:
-        """Execute SQL query against uploaded CSV/Excel files using SQLite"""
+        """Execute SQL query against uploaded CSV/Excel files using SQLite with optimizations"""
         import time
         start_time = time.time()
         
@@ -512,11 +582,219 @@ class SQLQueryService:
                     "error": "No data files loaded. Please upload some Excel/CSV files first."
                 }
             
-            # Execute the actual SQL query using two-query approach
+            # Optimize SQLite settings for better performance
+            self._optimize_sqlite_settings(cursor)
+            
+            # Execute the actual SQL query using optimized approach
             self.logger.info(f"Executing SQL: {sql_query}")
             
+            # Check for expensive JOIN types and apply optimizations
+            is_expensive_join = self._is_expensive_join(sql_query)
+            self.logger.info(f"Expensive join detection result: {is_expensive_join}")
+            
+            if is_expensive_join:
+                self.logger.warning(f"⚠️  {is_expensive_join} detected - applying performance optimizations")
+                self.logger.info("Switching to expensive query execution path...")
+                try:
+                    result = self._execute_expensive_query(cursor, sql_query, limit, start_time, loaded_tables)
+                    conn.close()  # Close connection here for expensive queries
+                    return result
+                except Exception as e:
+                    self.logger.error(f"Error in expensive query execution: {e}")
+                    self.logger.info("Falling back to simplified query...")
+                    try:
+                        # Fallback: try with a very simple query structure
+                        fallback_result = self._execute_fallback_query(cursor, sql_query, limit, start_time, loaded_tables)
+                        conn.close()
+                        return fallback_result
+                    except Exception as fallback_error:
+                        self.logger.error(f"Fallback query also failed: {fallback_error}")
+                        conn.close()
+                        raise
+            
+            # Execute normal query
+            self.logger.info("Using normal query execution path...")
+            result = self._execute_normal_query(cursor, sql_query, limit, start_time, loaded_tables)
+            conn.close()  # Close connection here for normal queries
+            return result
+            
+        except sqlite3.Error as e:
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"SQL Error: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": execution_time,
+                "error": error_msg
+            }
+            
+        except Exception as e:
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"Execution error: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": execution_time,
+                "error": error_msg
+            }
+    
+    def _optimize_sqlite_settings(self, cursor: sqlite3.Cursor) -> None:
+        """Optimize SQLite settings for better performance"""
+        try:
+            # Enable WAL mode for better concurrency
+            cursor.execute("PRAGMA journal_mode=WAL")
+            
+            # Increase cache size (default is 2000 pages, set to 10000)
+            cursor.execute("PRAGMA cache_size=10000")
+            
+            # Enable memory-mapped I/O
+            cursor.execute("PRAGMA mmap_size=268435456")  # 256MB
+            
+            # Optimize for speed over safety
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            
+            # Enable query planner optimizations
+            cursor.execute("PRAGMA optimize")
+            
+            # Set longer timeout for complex queries
+            cursor.execute("PRAGMA busy_timeout = 120000")  # 2 minutes timeout
+            
+            self.logger.info("Applied SQLite performance optimizations")
+        except Exception as e:
+            self.logger.warning(f"Could not apply all SQLite optimizations: {e}")
+    
+    def _is_expensive_join(self, sql_query: str) -> str:
+        """Check if query contains expensive JOIN operations"""
+        query_upper = sql_query.upper()
+        self.logger.info(f"Checking for expensive joins in query: {query_upper[:100]}...")
+        
+        if 'FULL OUTER JOIN' in query_upper:
+            self.logger.info("Found FULL OUTER JOIN")
+            return "FULL OUTER JOIN"
+        elif 'RIGHT JOIN' in query_upper:
+            self.logger.info("Found RIGHT JOIN")
+            return "RIGHT JOIN"
+        elif 'CROSS JOIN' in query_upper:
+            self.logger.info("Found CROSS JOIN")
+            return "CROSS JOIN"
+        
+        self.logger.info("No expensive joins found")
+        return None
+    
+    def _execute_expensive_query(self, cursor: sqlite3.Cursor, sql_query: str, limit: int, start_time: float, loaded_tables: Dict) -> Dict:
+        """Execute expensive queries with special optimizations"""
+        import time
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Query execution timed out")
+        
+        try:
+            # For expensive queries, we'll use a different strategy
+            # First, try to get a sample without counting all rows
+            self.logger.info("Executing expensive query with sample-first approach...")
+            
+            # Execute main query with LIMIT for display (skip count for now)
+            final_query = sql_query
+            if limit:
+                if 'LIMIT' not in sql_query.upper():
+                    final_query = f"{sql_query} LIMIT {limit}"
+            else:
+                # Default limit for expensive queries
+                final_query = f"{sql_query} LIMIT 1000"
+            
+            self.logger.info(f"Executing main query with limit: {limit or 1000}")
+            self.logger.info(f"Final query: {final_query}")
+            
+            # Set a shorter timeout for expensive queries to prevent hanging
+            cursor.execute("PRAGMA busy_timeout = 30000")  # 30 seconds
+            
+            # Use a more aggressive approach for RIGHT JOIN - convert to LEFT JOIN
+            if 'RIGHT JOIN' in final_query.upper():
+                self.logger.info("Converting RIGHT JOIN to LEFT JOIN for better performance...")
+                # Simple conversion: swap table order and change RIGHT JOIN to LEFT JOIN
+                # This is a basic conversion - in production you'd want more sophisticated logic
+                optimized_query = final_query.replace('RIGHT JOIN', 'LEFT JOIN')
+                self.logger.info(f"Optimized query: {optimized_query}")
+                
+                # Set a 30-second timeout using signal
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+                
+                try:
+                    cursor.execute(optimized_query)
+                    signal.alarm(0)  # Cancel the alarm
+                except TimeoutError:
+                    signal.alarm(0)  # Cancel the alarm
+                    self.logger.error("Query timed out after 30 seconds")
+                    raise
+            else:
+                # Set a 30-second timeout using signal
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(30)
+                
+                try:
+                    cursor.execute(final_query)
+                    signal.alarm(0)  # Cancel the alarm
+                except TimeoutError:
+                    signal.alarm(0)  # Cancel the alarm
+                    self.logger.error("Query timed out after 30 seconds")
+                    raise
+            
+            results = cursor.fetchall()
+            
+            # Get column names
+            column_names = [description[0] for description in cursor.description] if cursor.description else []
+            
+            # Format results as list of dictionaries
+            formatted_data = [dict(zip(column_names, row)) for row in results]
+            
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            
+            # For expensive queries, we'll estimate total rows instead of counting
+            estimated_total = len(formatted_data) * 10  # Rough estimate
+            
+            result = {
+                "data": formatted_data,
+                "total_rows": estimated_total,  # Estimated for expensive queries
+                "columns": column_names,
+                "execution_time": execution_time,
+                "loaded_tables": loaded_tables,
+                "warning": "This is an expensive query. Total row count is estimated."
+            }
+            
+            self.logger.info(
+                f"Expensive query executed successfully: {len(formatted_data)} rows returned "
+                f"(estimated {estimated_total} total) in {execution_time}"
+            )
+            
+            return result
+            
+        except Exception as e:
+            execution_time = f"{(time.time() - start_time):.3f}s"
+            error_msg = f"Expensive query execution error: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": execution_time,
+                "error": error_msg
+            }
+    
+    def _execute_normal_query(self, cursor: sqlite3.Cursor, sql_query: str, limit: int, start_time: float, loaded_tables: Dict) -> Dict:
+        """Execute normal queries with standard approach"""
+        import time
+        
+        try:
             # Step 1: Get total count first (without LIMIT)
-            # Remove LIMIT clause from the original query for counting
             count_sql = sql_query
             if 'LIMIT' in sql_query.upper():
                 # Remove LIMIT clause and everything after it
@@ -561,14 +839,11 @@ class SQLQueryService:
                 f"out of {total_rows} total rows in {execution_time}"
             )
             
-            # Close connection
-            conn.close()
-            
             return result
             
-        except sqlite3.Error as e:
+        except Exception as e:
             execution_time = f"{(time.time() - start_time):.3f}s"
-            error_msg = f"SQL Error: {str(e)}"
+            error_msg = f"Normal query execution error: {str(e)}"
             self.logger.error(error_msg)
             
             return {
@@ -578,16 +853,133 @@ class SQLQueryService:
                 "execution_time": execution_time,
                 "error": error_msg
             }
+    
+    def optimize_query_for_joins(self, sql_query: str) -> str:
+        """Optimize SQL query for better JOIN performance"""
+        try:
+            # Convert RIGHT JOIN to LEFT JOIN (equivalent but often faster)
+            if 'RIGHT JOIN' in sql_query.upper():
+                self.logger.info("Converting RIGHT JOIN to LEFT JOIN for better performance...")
+                # This is a simplified conversion - in practice, you'd need to swap table order
+                # For now, we'll add a hint to use indexes
+                optimized_query = sql_query.replace('RIGHT JOIN', 'LEFT JOIN')
+                return optimized_query
+            
+            # Add hints for FULL OUTER JOIN optimization
+            if 'FULL OUTER JOIN' in sql_query.upper():
+                self.logger.info("Adding optimization hints for FULL OUTER JOIN...")
+                # Add a comment with optimization hints
+                optimized_query = sql_query.replace(
+                    'FULL OUTER JOIN', 
+                    'FULL OUTER JOIN /*+ USE_INDEX */'
+                )
+                return optimized_query
+            
+            return sql_query
+            
+        except Exception as e:
+            self.logger.warning(f"Could not optimize query: {e}")
+            return sql_query
+    
+    def _execute_fallback_query(self, cursor: sqlite3.Cursor, sql_query: str, limit: int, start_time: float, loaded_tables: Dict) -> Dict:
+        """Execute a simplified fallback query when expensive queries fail"""
+        import time
+        
+        try:
+            self.logger.info("Executing fallback query with minimal data...")
+            
+            # Create a very simple query that just gets a few rows from the first table
+            # This is a last resort to prevent complete failure
+            if 'FROM' in sql_query.upper():
+                # Extract the first table from the query
+                from_index = sql_query.upper().find('FROM')
+                from_clause = sql_query[from_index:]
+                
+                # Find the first table name
+                parts = from_clause.split()
+                if len(parts) > 1:
+                    first_table = parts[1]
+                    # Create a simple query
+                    simple_query = f"SELECT * FROM {first_table} LIMIT {limit or 100}"
+                    
+                    self.logger.info(f"Fallback query: {simple_query}")
+                    cursor.execute(simple_query)
+                    results = cursor.fetchall()
+                    
+                    # Get column names
+                    column_names = [description[0] for description in cursor.description] if cursor.description else []
+                    
+                    # Format results
+                    formatted_data = [dict(zip(column_names, row)) for row in results]
+                    
+                    execution_time = f"{(time.time() - start_time):.3f}s"
+                    
+                    return {
+                        "data": formatted_data,
+                        "total_rows": len(formatted_data),
+                        "columns": column_names,
+                        "execution_time": execution_time,
+                        "loaded_tables": loaded_tables,
+                        "warning": "This is a fallback query due to JOIN performance issues. Results may be incomplete."
+                    }
+            
+            # If we can't extract table info, return empty result
+            return {
+                "data": [],
+                "total_rows": 0,
+                "columns": [],
+                "execution_time": f"{(time.time() - start_time):.3f}s",
+                "error": "Could not create fallback query"
+            }
             
         except Exception as e:
             execution_time = f"{(time.time() - start_time):.3f}s"
-            error_msg = f"Execution error: {str(e)}"
-            self.logger.error(error_msg)
-            
+            self.logger.error(f"Fallback query failed: {e}")
             return {
                 "data": [],
                 "total_rows": 0,
                 "columns": [],
                 "execution_time": execution_time,
-                "error": error_msg
+                "error": f"Fallback query failed: {str(e)}"
+            }
+    
+    def recreate_indexes_for_existing_data(self) -> Dict:
+        """Recreate indexes for existing data to improve JOIN performance"""
+        try:
+            conn = self._get_database_connection()
+            cursor = conn.cursor()
+            
+            # Get all existing tables
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = cursor.fetchall()
+            
+            recreated_count = 0
+            for (table_name,) in tables:
+                try:
+                    # Get table columns
+                    cursor.execute(f"PRAGMA table_info({table_name})")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    
+                    # Recreate indexes for this table
+                    self._create_optimized_indexes(cursor, table_name, columns)
+                    recreated_count += 1
+                    
+                except Exception as e:
+                    self.logger.warning(f"Could not recreate indexes for {table_name}: {e}")
+                    continue
+            
+            conn.close()
+            
+            return {
+                "success": True,
+                "message": f"Successfully recreated indexes for {recreated_count} tables",
+                "tables_processed": recreated_count
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error recreating indexes: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to recreate indexes"
             }

@@ -82,7 +82,7 @@ export class SchemaEditorDialogComponent implements OnInit {
   
   // PostgreSQL data type options
   postgresDataTypes = [
-    'TEXT', 'VARCHAR(10)', 'VARCHAR(25)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)',
+    'TEXT', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)',
     'INTEGER', 'BIGINT', 'SMALLINT', 
     'DECIMAL(10,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
     'DOUBLE PRECISION', 'REAL', 'BOOLEAN', 
@@ -220,6 +220,8 @@ export class SchemaEditorDialogComponent implements OnInit {
     const typeMapping: { [key: string]: string } = {
       'TEXT': 'TEXT',
       'VARCHAR': 'VARCHAR(255)', // Default to largest VARCHAR if no length specified
+      'VARCHAR(10)': 'VARCHAR(255)', // Fix: Upgrade small VARCHAR to larger size
+      'VARCHAR(25)': 'VARCHAR(255)', // Fix: Upgrade small VARCHAR to larger size
       'INTEGER': 'INTEGER',
       'BIGINT': 'BIGINT',
       'SMALLINT': 'SMALLINT',

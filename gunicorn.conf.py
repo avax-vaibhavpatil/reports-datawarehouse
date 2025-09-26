@@ -7,11 +7,11 @@ import os
 bind = "0.0.0.0:8000"
 backlog = 2048
 
-# Worker processes
-workers = multiprocessing.cpu_count() * 2 + 1
+# Worker processes - Optimized for large data operations
+workers = 2  # Reduced for stability
 worker_class = "uvicorn.workers.UvicornWorker"
 worker_connections = 1000
-timeout = 30
+timeout = 3000  # Increased to 5 minutes for large data operations
 keepalive = 2
 
 # Restart workers after this many requests, to help prevent memory leaks

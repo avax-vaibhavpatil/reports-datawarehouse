@@ -275,8 +275,31 @@ class DataPipelineService:
                 'message': 'Validation failed due to error'
             }
     
-    def map_pandas_to_postgres_type(self, pandas_dtype: str) -> str:
-        """Convert pandas data types to PostgreSQL data types"""
+    def map_pandas_to_postgres_type(self, pandas_dtype: str, sample_data: list = None) -> str:
+        """Convert pandas data types to PostgreSQL data types with intelligent VARCHAR sizing"""
+        dtype_str = str(pandas_dtype)
+        
+        # For object types, analyze sample data to determine appropriate VARCHAR length
+        if dtype_str == 'object' and sample_data:
+            max_length = 0
+            for val in sample_data:
+                if val is not None:
+                    val_str = str(val)
+                    max_length = max(max_length, len(val_str))
+            
+            # Choose appropriate VARCHAR size based on data length
+            if max_length <= 50:
+                return 'VARCHAR(50)'
+            elif max_length <= 100:
+                return 'VARCHAR(100)'
+            elif max_length <= 255:
+                return 'VARCHAR(255)'
+            elif max_length <= 500:
+                return 'VARCHAR(500)'
+            else:
+                return 'TEXT'  # Use TEXT for very long strings
+        
+        # Standard type mapping
         type_mapping = {
             'int64': 'BIGINT',
             'int32': 'INTEGER', 
@@ -285,9 +308,9 @@ class DataPipelineService:
             'float32': 'REAL',
             'bool': 'BOOLEAN',
             'datetime64[ns]': 'TIMESTAMP',
-            'object': 'TEXT',
+            'object': 'TEXT',  # Use TEXT for all string data to avoid length issues
         }
-        dtype_str = str(pandas_dtype)
+        
         postgres_type = type_mapping.get(dtype_str, 'TEXT')
         self.logger.debug(f"Mapped {dtype_str} -> {postgres_type}")
         return postgres_type
@@ -351,9 +374,6 @@ class DataPipelineService:
                 # Get auto-detected type
                 detected_type = str(dtype)
                 
-                # Get our current mapping (this will be improved with user corrections)
-                suggested_type = self.map_pandas_to_postgres_type(dtype)
-                
                 # Clean column name for PostgreSQL
                 clean_column_name = column_name.replace(' ', '_').replace('-', '_').lower()
                 
@@ -365,6 +385,9 @@ class DataPipelineService:
                         sample_values.append(val.item())
                     else:
                         sample_values.append(val)
+                
+                # Get our current mapping (this will be improved with user corrections)
+                suggested_type = self.map_pandas_to_postgres_type(dtype, sample_values)
                 
                 column_info = {
                     'original_name': column_name,
@@ -519,7 +542,9 @@ class DataPipelineService:
                         pg_type = column_corrections[clean_name]
                         self.logger.debug(f"Using user correction: {clean_name} -> {pg_type}")
                     else:
-                        pg_type = self.map_pandas_to_postgres_type(df[col_name].dtype)
+                        # Get sample data for intelligent VARCHAR sizing
+                        sample_data = df[col_name].dropna().head(5).tolist()
+                        pg_type = self.map_pandas_to_postgres_type(df[col_name].dtype, sample_data)
                         self.logger.debug(f"Using auto-detected: {clean_name} -> {pg_type}")
                     
                     column_defs.append(f"    {clean_name} {pg_type}")
@@ -554,8 +579,8 @@ class DataPipelineService:
                 VALUES ({placeholders})
                 """
                 
-                # Insert in batches for better performance
-                batch_size = 1000
+                # Insert in smaller batches to prevent timeout and memory issues
+                batch_size = 500
                 total_batches = (total_rows + batch_size - 1) // batch_size
                 inserted_rows = 0
                 
