@@ -13,6 +13,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
 import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
 import { ColumnMatchingService, ColumnRelationship } from '../../services/column-matching.service';
+import { FilenameDialogComponent, FilenameDialogData } from '../filename-dialog/filename-dialog.component';
 
 @Component({
   selector: 'app-sql-query-builder',
@@ -506,63 +507,67 @@ export class SQLQueryBuilderComponent implements OnInit {
     this.showPreview = !this.showPreview;
   }
 
+  private processQueryConfiguration(): SQLQueryRequest {
+    const formValue = this.queryForm.value;
+    return {
+      tables: formValue.tables.map((table: any, tableIndex: number) => {
+        // Filter only selected columns
+        const selectedColumns: string[] = [];
+        const actualColumns = this.getTableColumns(tableIndex);
+        table.columns.forEach((isSelected: boolean, colIndex: number) => {
+          if (isSelected && actualColumns[colIndex]) {
+            selectedColumns.push(actualColumns[colIndex]);
+          }
+        });
+        
+        return {
+          name: table.name,
+          alias: table.alias || undefined,
+          columns: selectedColumns,
+          custom_expressions: table.custom_expressions || []
+        };
+      }).filter((table: any) => table.columns.length > 0),
+      joins: formValue.joins.map((join: any, joinIndex: number) => {
+        // Get columns for joined table
+        const joinTable = this.availableTables.find(t => t.name === join.table);
+        const selectedJoinColumns: string[] = [];
+        
+        if (joinTable && join.columns) {
+          join.columns.forEach((isSelected: boolean, colIndex: number) => {
+            if (isSelected && joinTable.columns[colIndex]) {
+              selectedJoinColumns.push(joinTable.columns[colIndex]);
+            }
+          });
+        }
+        
+        return {
+          type: join.type,
+          table: join.table,
+          alias: join.alias || undefined,
+          columns: selectedJoinColumns,
+          conditions: join.conditions || []
+        };
+      }),
+      where_conditions: formValue.where_conditions.map((where: any) => ({
+        left_side: where.left_side,
+        operator: where.operator,
+        right_side: where.right_side,
+        logical_operator: where.logical_operator
+      })),
+      group_by: formValue.group_by.map((gb: any) => gb.column).filter((col: string) => col),
+      order_by: formValue.order_by.map((ob: any) => ({
+        column: ob.column,
+        direction: ob.direction
+      })),
+      limit: formValue.limit || undefined
+    };
+  }
+
   executeQuery(): void {
     if (this.queryForm.valid) {
       this.isExecuting = true;
       
-      const formValue = this.queryForm.value;
-      const request: SQLQueryRequest = {
-        tables: formValue.tables.map((table: any, tableIndex: number) => {
-          // Filter only selected columns
-          const selectedColumns: string[] = [];
-          const actualColumns = this.getTableColumns(tableIndex);
-          table.columns.forEach((isSelected: boolean, colIndex: number) => {
-            if (isSelected && actualColumns[colIndex]) {
-              selectedColumns.push(actualColumns[colIndex]);
-            }
-          });
-          
-          return {
-            name: table.name,
-            alias: table.alias || undefined,
-            columns: selectedColumns,
-            custom_expressions: table.custom_expressions || []
-          };
-        }).filter((table: any) => table.columns.length > 0),
-        joins: formValue.joins.map((join: any, joinIndex: number) => {
-          // Get columns for joined table
-          const joinTable = this.availableTables.find(t => t.name === join.table);
-          const selectedJoinColumns: string[] = [];
-          
-          if (joinTable && join.columns) {
-            join.columns.forEach((isSelected: boolean, colIndex: number) => {
-              if (isSelected && joinTable.columns[colIndex]) {
-                selectedJoinColumns.push(joinTable.columns[colIndex]);
-              }
-            });
-          }
-          
-          return {
-            type: join.type,
-            table: join.table,
-            alias: join.alias || undefined,
-            columns: selectedJoinColumns,
-            conditions: join.conditions || []
-          };
-        }),
-        where_conditions: formValue.where_conditions.map((where: any) => ({
-          left_side: where.left_side,
-          operator: where.operator,
-          right_side: where.right_side,
-          logical_operator: where.logical_operator
-        })),
-        group_by: formValue.group_by.map((gb: any) => gb.column).filter((col: string) => col),
-        order_by: formValue.order_by.map((ob: any) => ({
-          column: ob.column,
-          direction: ob.direction
-        })),
-        limit: formValue.limit || undefined
-      };
+      const request: SQLQueryRequest = this.processQueryConfiguration();
 
       this.sqlQueryService.executeQuery({ query_config: request, sample_size: 1000 }).subscribe({
         next: (response) => {
@@ -591,19 +596,50 @@ export class SQLQueryBuilderComponent implements OnInit {
       return;
     }
 
-    // Convert data to CSV
-    const csvContent = this.convertToCSV(this.queryResults, this.queryColumns);
+    // Generate default filename
+    const defaultFilename = `query_results_${new Date().toISOString().split('T')[0]}.csv`;
     
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `query_results_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    // Process query configuration the same way as executeQuery()
+    const processedQueryConfig = this.processQueryConfiguration();
+
+    // Open filename dialog
+    const dialogRef = this.dialog.open(FilenameDialogComponent, {
+      width: '500px',
+      data: { 
+        defaultFilename: defaultFilename,
+        useBackendExport: true,
+        queryConfig: processedQueryConfig
+      } as FilenameDialogData
+    });
+
+    dialogRef.afterClosed().subscribe((result: any) => {
+      if (result) {
+        this.performBackendCSVExport(result.filename, result.queryConfig);
+      }
+    });
+  }
+
+
+  private performBackendCSVExport(filename: string, queryConfig: any): void {
+    this.snackBar.open('Exporting CSV...', 'Close', { duration: 1000 });
     
-    this.snackBar.open('Data exported to CSV successfully!', 'Close', { duration: 2000 });
+    this.sqlQueryService.exportToCSV(queryConfig, filename).subscribe({
+      next: (blob: Blob) => {
+        // Create download link for the blob
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        window.URL.revokeObjectURL(url);
+        
+        this.snackBar.open(`Data exported to ${filename} successfully!`, 'Close', { duration: 3000 });
+      },
+      error: (error) => {
+        console.error('CSV export error:', error);
+        this.snackBar.open('Export failed. Please try again.', 'Close', { duration: 3000 });
+      }
+    });
   }
 
   openSchemaEditor(): void {

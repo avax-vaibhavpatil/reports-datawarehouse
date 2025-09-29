@@ -138,4 +138,21 @@ export class SQLQueryService {
   getQueryExamples(): Observable<{examples: any[]}> {
     return this.http.get<{examples: any[]}>(`${this.apiUrl}/examples`);
   }
+
+  /**
+   * Export query results to CSV with custom filename (backend export)
+   * Respects the query's natural limit - if query has LIMIT 100, exports 100 rows
+   * If no limit in query, exports all available data
+   */
+  exportToCSV(queryConfig: any, filename: string): Observable<Blob> {
+    const request = {
+      query_config: queryConfig,
+      filename: filename
+      // No limit specified - backend will respect query's natural limit
+    };
+    
+    return this.http.post(`${this.apiUrl}/export-csv`, request, {
+      responseType: 'blob'
+    });
+  }
 }

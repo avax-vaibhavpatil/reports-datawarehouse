@@ -4,6 +4,7 @@ from typing import List, Dict
 from pydantic import BaseModel
 import logging
 from ..services.file_service import FileService
+from ..services.sql_query_service import SQLQueryService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,10 +21,15 @@ class MultipleFilesDataRequest(BaseModel):
 def get_file_service():
     return FileService()
 
+# Dependency to get SQLQueryService instance
+def get_sql_query_service():
+    return SQLQueryService()
+
 @router.post("/upload")
 async def upload_files(
     files: List[UploadFile] = File(...),
-    file_service: FileService = Depends(get_file_service)
+    file_service: FileService = Depends(get_file_service),
+    sql_service: SQLQueryService = Depends(get_sql_query_service)
 ):
     """
     Upload multiple Excel/CSV files and extract their column metadata
@@ -80,6 +86,18 @@ async def upload_files(
     }
     
     logger.info(f"Upload response: {response}")
+    
+    # Reload database with new files if any files were successfully uploaded
+    if uploaded_files:
+        try:
+            logger.info("Reloading database with newly uploaded files...")
+            conn = sql_service._get_database_connection()
+            loaded_tables = sql_service._load_uploaded_files_to_database(conn)
+            conn.close()
+            logger.info(f"Database reloaded successfully with {len(loaded_tables)} tables")
+        except Exception as e:
+            logger.error(f"Error reloading database: {e}")
+            # Don't fail the upload if database reload fails
     
     if uploaded_files:
         return JSONResponse(content=response, status_code=200)

@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Any
 import logging
+import csv
+import io
 from ..services.sql_query_service import SQLQueryService
 
 # SQL Query Routes
@@ -64,6 +66,11 @@ class QueryPreviewResponse(BaseModel):
     columns: List[str]
     execution_time: str
     error: Optional[str] = None
+
+class CSVExportRequest(BaseModel):
+    query_config: Dict[str, Any]
+    filename: str
+    limit: Optional[int] = None  # No default limit - use query's limit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -344,3 +351,72 @@ async def recreate_indexes():
             content={"success": False, "error": str(e)},
             status_code=500
         )
+
+@router.post("/export-csv")
+async def export_query_to_csv(
+    request: CSVExportRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """
+    Export query results to CSV with custom filename
+    """
+    try:
+        logger.info(f"CSV export request received: filename={request.filename}, limit={request.limit}")
+        
+        # Execute the query - if no limit specified, get all data
+        # If limit is specified, use it; otherwise get all available data
+        limit = request.limit if request.limit is not None else 1000000  # Large number for "all data"
+        result = service.execute_query_preview(
+            request.query_config, 
+            limit
+        )
+        
+        if not result.get("success", False):
+            raise HTTPException(status_code=400, detail=result.get("error", "Query execution failed"))
+        
+        # Get the data and columns
+        data = result.get("sample_data", [])
+        columns = result.get("columns", [])
+        
+        if not data or not columns:
+            raise HTTPException(status_code=400, detail="No data to export")
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=columns)
+        writer.writeheader()
+        
+        for row in data:
+            # Clean the data for CSV (handle None values)
+            clean_row = {}
+            for col in columns:
+                value = row.get(col)
+                if value is None:
+                    clean_row[col] = ""
+                else:
+                    clean_row[col] = str(value)
+            writer.writerow(clean_row)
+        
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Ensure filename has .csv extension
+        filename = request.filename
+        if not filename.lower().endswith('.csv'):
+            filename += '.csv'
+        
+        # Return CSV file as response
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": "text/csv; charset=utf-8"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting CSV: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to export CSV: {str(e)}")
