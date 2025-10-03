@@ -16,6 +16,7 @@ export interface ColumnRelationship {
 export interface ColumnMatchingRequest {
   left_table: string;
   right_table: string;
+  connection_config?: any;  // For database mode
 }
 
 export interface ColumnMatchingResponse {

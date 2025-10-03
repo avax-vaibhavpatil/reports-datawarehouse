@@ -10,10 +10,12 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
+import { ActivatedRoute, Router } from '@angular/router';
 import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
 import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
 import { ColumnMatchingService, ColumnRelationship } from '../../services/column-matching.service';
 import { FilenameDialogComponent, FilenameDialogData } from '../filename-dialog/filename-dialog.component';
+import { ProgressDialogComponent, ProgressDialogData } from '../progress-dialog/progress-dialog.component';
 
 @Component({
   selector: 'app-sql-query-builder',
@@ -48,19 +50,37 @@ export class SQLQueryBuilderComponent implements OnInit {
   totalRows = 0;
   executionTime = '';
   isExecuting = false;
+  
+  // Database connection properties
+  isDatabaseMode = false;
+  connectionConfig: any = null;
+  selectedTables: string[] = [];
 
   constructor(
     private fb: FormBuilder,
     private sqlQueryService: SQLQueryService,
     private snackBar: MatSnackBar,
     private dialog: MatDialog,
-    private columnMatchingService: ColumnMatchingService
+    private columnMatchingService: ColumnMatchingService,
+    private route: ActivatedRoute,
+    private router: Router
   ) {
     this.queryForm = this.createForm();
   }
 
   ngOnInit(): void {
-    this.loadAvailableTables();
+    // Check if we have database connection parameters
+    this.route.queryParams.subscribe(params => {
+      if (params['dbMode'] === 'true' && params['connectionConfig']) {
+        this.isDatabaseMode = true;
+        this.connectionConfig = JSON.parse(params['connectionConfig']);
+        this.selectedTables = params['selectedTables'] ? JSON.parse(params['selectedTables']) : [];
+        this.loadDatabaseTables();
+      } else {
+        this.loadAvailableTables();
+      }
+    });
+    
     this.loadJoinTypes();
   }
 
@@ -157,6 +177,25 @@ export class SQLQueryBuilderComponent implements OnInit {
     });
   }
 
+  loadDatabaseTables(): void {
+    this.isLoading = true;
+    this.sqlQueryService.getDatabaseTables(this.connectionConfig).subscribe({
+      next: (response) => {
+        this.availableTables = response.tables;
+        this.isLoading = false;
+        
+        // Don't auto-add tables - let user select from dropdown
+        // Just show success message
+        this.snackBar.open(`Loaded ${response.tables.length} database tables. Use the dropdown to select tables.`, 'Close', { duration: 5000 });
+      },
+      error: (error) => {
+        console.error('Error loading database tables:', error);
+        this.snackBar.open('Error loading database tables', 'Close', { duration: 3000 });
+        this.isLoading = false;
+      }
+    });
+  }
+
   loadJoinTypes(): void {
     this.sqlQueryService.getSupportedJoinTypes().subscribe({
       next: (response) => {
@@ -177,6 +216,21 @@ export class SQLQueryBuilderComponent implements OnInit {
       custom_expressions: this.fb.array([])
     });
     this.tablesArray.push(tableForm);
+  }
+
+  addTableWithData(table: TableInfo): void {
+    const tableForm = this.fb.group({
+      name: [table.name, Validators.required],
+      alias: [''],
+      columns: this.fb.array([]),
+      selectAll: [false],
+      custom_expressions: this.fb.array([])
+    });
+    this.tablesArray.push(tableForm);
+  }
+
+  clearAllTables(): void {
+    this.tablesArray.clear();
   }
 
   removeTable(index: number): void {
@@ -418,23 +472,44 @@ export class SQLQueryBuilderComponent implements OnInit {
           column: ob.column,
           direction: ob.direction
         })),
-        limit: formValue.limit || undefined
+        limit: formValue.limit || undefined,
+        source_type: this.isDatabaseMode ? 'database' : 'file',
+        connection_config: this.isDatabaseMode ? this.connectionConfig : undefined
       };
 
-      this.sqlQueryService.generateSQLQuery(request).subscribe({
-        next: (response) => {
-          this.queryResponse = response;
-          this.generatedSQL = response.sql;
-          this.formattedSQL = response.formatted_sql;
-          this.isLoading = false;
-          this.snackBar.open('SQL query generated successfully!', 'Close', { duration: 3000 });
-        },
-        error: (error) => {
-          console.error('Error generating SQL:', error);
-          this.snackBar.open('Error generating SQL query', 'Close', { duration: 3000 });
-          this.isLoading = false;
-        }
-      });
+      if (this.isDatabaseMode) {
+        // Use database query generation
+        this.sqlQueryService.generateDatabaseSQLQuery(this.connectionConfig, request).subscribe({
+          next: (response) => {
+            this.queryResponse = response;
+            this.generatedSQL = response.sql;
+            this.formattedSQL = response.formatted_sql;
+            this.isLoading = false;
+            this.snackBar.open('SQL query generated and executed successfully!', 'Close', { duration: 3000 });
+          },
+          error: (error) => {
+            console.error('Error generating database SQL:', error);
+            this.snackBar.open('Error generating database SQL query', 'Close', { duration: 3000 });
+            this.isLoading = false;
+          }
+        });
+      } else {
+        // Use file-based query generation
+        this.sqlQueryService.generateSQLQuery(request).subscribe({
+          next: (response) => {
+            this.queryResponse = response;
+            this.generatedSQL = response.sql;
+            this.formattedSQL = response.formatted_sql;
+            this.isLoading = false;
+            this.snackBar.open('SQL query generated successfully!', 'Close', { duration: 3000 });
+          },
+          error: (error) => {
+            console.error('Error generating SQL:', error);
+            this.snackBar.open('Error generating SQL query', 'Close', { duration: 3000 });
+            this.isLoading = false;
+          }
+        });
+      }
     } else {
       this.snackBar.open('Please fill in all required fields', 'Close', { duration: 3000 });
     }
@@ -567,24 +642,45 @@ export class SQLQueryBuilderComponent implements OnInit {
     if (this.queryForm.valid) {
       this.isExecuting = true;
       
-      const request: SQLQueryRequest = this.processQueryConfiguration();
+      if (this.isDatabaseMode && this.generatedSQL) {
+        // Use database preview for database mode
+        this.sqlQueryService.previewDatabaseQuery(this.connectionConfig, this.generatedSQL, 1000).subscribe({
+          next: (response) => {
+            this.queryResults = response.data || [];
+            this.queryColumns = response.columns || [];
+            this.totalRows = response.row_count || 0;
+            this.executionTime = response.execution_time || '';
+            this.isExecuting = false;
+            this.showPreview = true;
+            this.snackBar.open(`Query executed successfully! Showing ${this.queryResults.length} rows.`, 'Close', { duration: 3000 });
+          },
+          error: (error) => {
+            console.error('Error executing database query:', error);
+            this.snackBar.open('Error executing database query', 'Close', { duration: 3000 });
+            this.isExecuting = false;
+          }
+        });
+      } else {
+        // Use file-based query execution
+        const request: SQLQueryRequest = this.processQueryConfiguration();
 
-      this.sqlQueryService.executeQuery({ query_config: request, sample_size: 1000 }).subscribe({
-        next: (response) => {
-          this.queryResults = response.sample_data || [];
-          this.queryColumns = response.columns || [];
-          this.totalRows = response.total_rows || 0;
-          this.executionTime = response.execution_time || '';
-          this.isExecuting = false;
-          this.showPreview = true;
-          this.snackBar.open(`Query executed successfully! Showing ${this.queryResults.length} out of ${this.totalRows.toLocaleString()} records.`, 'Close', { duration: 3000 });
-        },
-        error: (error) => {
-          console.error('Error executing query:', error);
-          this.snackBar.open('Error executing query', 'Close', { duration: 3000 });
-          this.isExecuting = false;
-        }
-      });
+        this.sqlQueryService.executeQuery({ query_config: request, sample_size: 1000 }).subscribe({
+          next: (response) => {
+            this.queryResults = response.sample_data || [];
+            this.queryColumns = response.columns || [];
+            this.totalRows = response.total_rows || 0;
+            this.executionTime = response.execution_time || '';
+            this.isExecuting = false;
+            this.showPreview = true;
+            this.snackBar.open(`Query executed successfully! Showing ${this.queryResults.length} out of ${this.totalRows.toLocaleString()} records.`, 'Close', { duration: 3000 });
+          },
+          error: (error) => {
+            console.error('Error executing query:', error);
+            this.snackBar.open('Error executing query', 'Close', { duration: 3000 });
+            this.isExecuting = false;
+          }
+        });
+      }
     } else {
       this.snackBar.open('Please fill in all required fields', 'Close', { duration: 3000 });
     }
@@ -649,39 +745,79 @@ export class SQLQueryBuilderComponent implements OnInit {
       return;
     }
 
-    // Prepare data for the schema editor dialog
-    const dialogData: SchemaEditorData = {
-      sql: this.generatedSQL,
-      totalRows: this.totalRows,
-      columns: this.queryColumns,
-      sampleData: this.queryResults.slice(0, 5)
-    };
+    if (this.isDatabaseMode) {
+      // For database mode, use schema editor dialog (same as file mode)
+      // Prepare data for the schema editor dialog
+      const dialogData: SchemaEditorData = {
+        sql: this.generatedSQL,
+        totalRows: this.totalRows,
+        columns: this.queryColumns,
+        sampleData: this.queryResults.slice(0, 5),
+        isDatabaseMode: true,
+        connectionConfig: this.connectionConfig
+      };
 
-    // Open the schema editor dialog
-    const dialogRef = this.dialog.open(SchemaEditorDialogComponent, {
-      width: '90vw',
-      maxWidth: '900px',
-      maxHeight: '90vh',
-      data: dialogData,
-      disableClose: true // Prevent accidental closing
-    });
+      // Open the schema editor dialog
+      const dialogRef = this.dialog.open(SchemaEditorDialogComponent, {
+        width: '90vw',
+        maxWidth: '900px',
+        maxHeight: '90vh',
+        data: dialogData,
+        disableClose: true // Prevent accidental closing
+      });
 
-    // Handle dialog result
-    dialogRef.afterClosed().subscribe(result => {
-      if (result?.success) {
-        // Table was successfully created and data inserted
-        this.snackBar.open(
-          `🎉 Data Warehouse Updated! Table "${result.tableName}" now contains ${result.totalRows?.toLocaleString()} records from your query.`, 
-          'Close', 
-          { duration: 6000 }
-        );
-        console.log('Table Creation Success:', result.insertionStats);
-      } else if (result) {
-        // Dialog was closed with some result but not successful
-        console.log('Schema Editor Result:', result);
-      }
-    });
+      // Handle dialog result
+      dialogRef.afterClosed().subscribe(result => {
+        if (result?.success) {
+          // Table was successfully created and data inserted
+          this.snackBar.open(
+            `🎉 Data Warehouse Updated! Table "${result.tableName}" now contains ${result.totalRows?.toLocaleString()} records from your query.`, 
+            'Close', 
+            { duration: 6000 }
+          );
+          console.log('Table Creation Success:', result.insertionStats);
+        } else if (result) {
+          // Dialog was closed with some result but not successful
+          console.log('Schema Editor Result:', result);
+        }
+      });
+    } else {
+      // For file mode, use schema editor dialog
+      // Prepare data for the schema editor dialog
+      const dialogData: SchemaEditorData = {
+        sql: this.generatedSQL,
+        totalRows: this.totalRows,
+        columns: this.queryColumns,
+        sampleData: this.queryResults.slice(0, 5)
+      };
+
+      // Open the schema editor dialog
+      const dialogRef = this.dialog.open(SchemaEditorDialogComponent, {
+        width: '90vw',
+        maxWidth: '900px',
+        maxHeight: '90vh',
+        data: dialogData,
+        disableClose: true // Prevent accidental closing
+      });
+
+      // Handle dialog result
+      dialogRef.afterClosed().subscribe(result => {
+        if (result?.success) {
+          // Table was successfully created and data inserted
+          this.snackBar.open(
+            `🎉 Data Warehouse Updated! Table "${result.tableName}" now contains ${result.totalRows?.toLocaleString()} records from your query.`, 
+            'Close', 
+            { duration: 6000 }
+          );
+          console.log('Table Creation Success:', result.insertionStats);
+        } else if (result) {
+          // Dialog was closed with some result but not successful
+          console.log('Schema Editor Result:', result);
+        }
+      });
+    }
   }
+
 
   /**
    * Suggest column relationships for a specific join
@@ -700,7 +836,8 @@ export class SQLQueryBuilderComponent implements OnInit {
     
     this.columnMatchingService.suggestRelationships({
       left_table: leftTable,
-      right_table: rightTable
+      right_table: rightTable,
+      connection_config: this.isDatabaseMode ? this.connectionConfig : undefined
     }).subscribe({
       next: (response) => {
         this.isLoading = false;

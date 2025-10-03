@@ -34,6 +34,8 @@ class TableCreationRequest(BaseModel):
     user_table_name: str                    # User-provided table name
     column_corrections: Dict[str, str]      # User's data type corrections
     limit: Optional[int] = None             # None = insert all data
+    is_database_mode: Optional[bool] = False # Whether this is database mode
+    connection_config: Optional[Dict[str, Any]] = None # Database connection config
 
 # Dependency to get services
 def get_data_pipeline_service() -> DataPipelineService:
@@ -297,4 +299,88 @@ def test_services() -> Dict[str, Any]:
             'success': False,
             'error': str(e),
             'message': 'Service test failed'
-        } 
+        }
+
+@router.post("/create-table-database")
+async def create_table_with_data_database(
+    request: TableCreationRequest,
+    pipeline_service: DataPipelineService = Depends(get_data_pipeline_service),
+    sql_service: SQLQueryService = Depends(get_sql_query_service)
+) -> Dict[str, Any]:
+    """
+    Create PostgreSQL table with user-corrected schema and insert data from database.
+    
+    This endpoint:
+    1. Validates table name and checks for duplicates
+    2. Executes SQL query on connected database to get all data
+    3. Applies user's column type corrections
+    4. Creates PostgreSQL table with corrected schema
+    5. Inserts all data into the new table using chunked insertion
+    
+    Args:
+        request: Table creation request with schema corrections and database connection
+        
+    Returns:
+        Dict containing creation results and insertion statistics
+    """
+    try:
+        logger.info(f"🏗️ Database table creation requested: {request.db_schema}.{request.user_table_name}")
+        
+        # Step 1: Validate table name and check for duplicates
+        name_validation = pipeline_service.validate_table_name(request.user_table_name)
+        existence_check = pipeline_service.check_table_exists(request.db_schema, request.user_table_name)
+        
+        if not name_validation['is_valid']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid table name: {', '.join(name_validation['errors'])}"
+            )
+        
+        if existence_check['exists']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Table already exists: {existence_check['message']}"
+            )
+        
+        # Step 2: Execute database query to get all data
+        logger.info(f"🚀 Starting database table creation and data insertion...")
+        
+        # Use chunked insertion service for database mode
+        from ..services.chunked_insertion_service import ChunkedInsertionService
+        chunked_service = ChunkedInsertionService()
+        
+        creation_result = chunked_service.insert_data_with_progress(
+            connection_config=request.connection_config,
+            sql_query=request.query_sql,
+            target_table_name=request.user_table_name,
+            target_schema=request.db_schema,
+            chunk_size=1000,
+            preserve_order=True
+        )
+        
+        if creation_result['success']:
+            logger.info(f"✅ Database table creation completed: {creation_result['message']}")
+            return {
+                'success': True,
+                'table_name': creation_result['table_name'],
+                'schema': request.db_schema,
+                'total_rows_inserted': creation_result['inserted_rows'],
+                'total_time_seconds': creation_result['total_time'],
+                'rows_per_second': creation_result['rows_per_second'],
+                'message': creation_result['message']
+            }
+        else:
+            logger.error(f"❌ Database table creation failed: {creation_result.get('error')}")
+            raise HTTPException(
+                status_code=500,
+                detail=creation_result.get('message', 'Database table creation failed')
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in database table creation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        ) 

@@ -5,6 +5,9 @@ from pathlib import Path
 import json
 from datetime import datetime
 import sqlite3
+from sqlalchemy import create_engine, text
+from app.services.database_connection_service import DatabaseConnectionService
+from app.services.chunked_insertion_service import ChunkedInsertionService
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -690,10 +693,7 @@ class SQLQueryService:
     def _execute_expensive_query(self, cursor: sqlite3.Cursor, sql_query: str, limit: int, start_time: float, loaded_tables: Dict) -> Dict:
         """Execute expensive queries with special optimizations"""
         import time
-        import signal
-        
-        def timeout_handler(signum, frame):
-            raise TimeoutError("Query execution timed out")
+        import threading
         
         try:
             # For expensive queries, we'll use a different strategy
@@ -723,29 +723,11 @@ class SQLQueryService:
                 optimized_query = final_query.replace('RIGHT JOIN', 'LEFT JOIN')
                 self.logger.info(f"Optimized query: {optimized_query}")
                 
-                # Set a 30-second timeout using signal
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)
-                
-                try:
-                    cursor.execute(optimized_query)
-                    signal.alarm(0)  # Cancel the alarm
-                except TimeoutError:
-                    signal.alarm(0)  # Cancel the alarm
-                    self.logger.error("Query timed out after 30 seconds")
-                    raise
+                # Execute query without signal-based timeout (thread-safe approach)
+                cursor.execute(optimized_query)
             else:
-                # Set a 30-second timeout using signal
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(30)
-                
-                try:
-                    cursor.execute(final_query)
-                    signal.alarm(0)  # Cancel the alarm
-                except TimeoutError:
-                    signal.alarm(0)  # Cancel the alarm
-                    self.logger.error("Query timed out after 30 seconds")
-                    raise
+                # Execute query without signal-based timeout (thread-safe approach)
+                cursor.execute(final_query)
             
             results = cursor.fetchall()
             
@@ -982,4 +964,250 @@ class SQLQueryService:
                 "success": False,
                 "error": str(e),
                 "message": "Failed to recreate indexes"
+            }
+    
+    def get_database_tables(self, connection_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Get tables from connected database"""
+        try:
+            db_connection_service = DatabaseConnectionService()
+            result = db_connection_service.get_tables_with_password(connection_config)
+            
+            if result["success"]:
+                # Transform the result to match the expected format
+                tables = []
+                for table_info in result["tables"]:
+                    table = {
+                        "name": table_info["table_name"],
+                        "filename": f"database_{table_info['table_name']}",
+                        "columns": [col["name"] for col in table_info["columns"]],
+                        "row_count": table_info["row_count"],
+                        "file_type": "database",
+                        "source_type": "database"
+                    }
+                    tables.append(table)
+                
+                return {
+                    "success": True,
+                    "tables": tables,
+                    "count": len(tables)
+                }
+            else:
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Error getting database tables: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to get database tables"
+            }
+    
+    def execute_database_query(self, connection_config: Dict[str, Any], query: str, limit: int = 1000) -> Dict[str, Any]:
+        """Execute query on connected database"""
+        try:
+            db_connection_service = DatabaseConnectionService()
+            result = db_connection_service.execute_query(connection_config, query, limit)
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error executing database query: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to execute database query"
+            }
+    
+    def generate_database_sql_query(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate SQL query for database tables"""
+        try:
+            # Extract connection config and query config
+            connection_config = request.get("connection_config", {})
+            query_config = request.get("query_config", {})
+            
+            # Generate the SQL query using the same logic as file-based queries
+            sql_result = self.generate_sql_query(query_config)
+            
+            # The generate_sql_query method doesn't return "success" field, it returns the SQL directly
+            return {
+                "success": True,
+                "sql": sql_result["sql"],
+                "formatted_sql": sql_result["formatted_sql"],
+                "query_config": query_config,
+                "generated_at": datetime.now().isoformat(),
+                "join_count": sql_result.get("join_count", 0),
+                "table_count": sql_result.get("table_count", 0)
+            }
+                
+        except Exception as e:
+            self.logger.error(f"Error generating database SQL query: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to generate database SQL query"
+            }
+
+    def execute_database_query_preview(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute database query and return preview data (1000 rows)"""
+        try:
+            connection_config = request.get("connection_config", {})
+            sql_query = request.get("sql", "")
+            limit = request.get("limit", 1000)
+            
+            if not sql_query:
+                return {
+                    "success": False,
+                    "error": "No SQL query provided",
+                    "message": "SQL query is required for execution"
+                }
+            
+            # Execute the query on the database
+            execution_result = self.execute_database_query(connection_config, sql_query, limit)
+            
+            if execution_result["success"]:
+                return {
+                    "success": True,
+                    "data": execution_result["data"],
+                    "columns": execution_result["columns"],
+                    "row_count": execution_result["row_count"],
+                    "sql_query": sql_query,
+                    "execution_time": "0.0s",  # Could be calculated
+                    "message": f"Query executed successfully. Showing {len(execution_result['data'])} rows."
+                }
+            else:
+                return execution_result
+                
+        except Exception as e:
+            self.logger.error(f"Error executing database query preview: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to execute database query preview"
+            }
+
+    def save_database_query_to_warehouse(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Save database query results to data warehouse"""
+        try:
+            connection_config = request.get("connection_config", {})
+            sql_query = request.get("sql", "")
+            table_name = request.get("table_name", "")
+            schema = request.get("schema", "processed_data")
+            
+            if not sql_query:
+                return {
+                    "success": False,
+                    "error": "No SQL query provided",
+                    "message": "SQL query is required for saving"
+                }
+            
+            if not table_name:
+                return {
+                    "success": False,
+                    "error": "No table name provided",
+                    "message": "Table name is required for saving"
+                }
+            
+            # Execute the query on the database to get all data
+            execution_result = self.execute_database_query(connection_config, sql_query, limit=None)
+            
+            if not execution_result["success"]:
+                return execution_result
+            
+            # Convert data to DataFrame for warehouse processing
+            import pandas as pd
+            df = pd.DataFrame(execution_result["data"])
+            
+            # Use existing data pipeline service to save to warehouse
+            from app.services.data_pipeline_service import DataPipelineService
+            pipeline_service = DataPipelineService()
+            
+            # Generate schema preview
+            schema_preview = pipeline_service.generate_schema_preview(
+                df=df,
+                schema=schema,
+                user_table_name=table_name,
+                query_sql=sql_query
+            )
+            
+            if schema_preview["success"] and schema_preview["can_create"]:
+                # Save to warehouse
+                save_result = pipeline_service.save_dataframe_to_warehouse(
+                    df=df,
+                    schema=schema,
+                    table_name=table_name,
+                    query_sql=sql_query
+                )
+                
+                if save_result["success"]:
+                    return {
+                        "success": True,
+                        "message": f"Data saved successfully to {schema}.{table_name}",
+                        "table_name": table_name,
+                        "schema": schema,
+                        "full_table_name": f"{schema}.{table_name}",
+                        "row_count": len(df),
+                        "column_count": len(df.columns),
+                        "query_sql": sql_query
+                    }
+                else:
+                    return save_result
+            else:
+                return {
+                    "success": False,
+                    "error": "Cannot create table",
+                    "message": schema_preview.get("message", "Table creation failed"),
+                    "validation_errors": schema_preview.get("errors", [])
+                }
+                
+        except Exception as e:
+            self.logger.error(f"Error saving database query to warehouse: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to save database query to warehouse"
+            }
+
+    def save_database_query_to_warehouse_chunked(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Save database query results to data warehouse with chunked insertion and progress tracking"""
+        try:
+            connection_config = request.get("connection_config", {})
+            sql_query = request.get("sql", "")
+            table_name = request.get("table_name", "")
+            schema = request.get("schema", "processed_data")
+            chunk_size = request.get("chunk_size", 1000)
+            preserve_order = request.get("preserve_order", True)
+            
+            if not sql_query:
+                return {
+                    "success": False,
+                    "error": "No SQL query provided",
+                    "message": "SQL query is required for saving"
+                }
+            
+            if not table_name:
+                return {
+                    "success": False,
+                    "error": "No table name provided",
+                    "message": "Table name is required for saving"
+                }
+            
+            # Use chunked insertion service
+            chunked_service = ChunkedInsertionService()
+            
+            result = chunked_service.insert_data_with_progress(
+                connection_config=connection_config,
+                sql_query=sql_query,
+                target_table_name=table_name,
+                target_schema=schema,
+                chunk_size=chunk_size,
+                preserve_order=preserve_order
+            )
+            
+            return result
+                
+        except Exception as e:
+            self.logger.error(f"Error in chunked database save: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to save database query to warehouse with chunked insertion"
             }

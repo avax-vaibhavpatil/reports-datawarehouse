@@ -420,3 +420,164 @@ async def export_query_to_csv(
     except Exception as e:
         logger.error(f"Error exporting CSV: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to export CSV: {str(e)}")
+
+# Database Connection Routes
+
+class DatabaseTableRequest(BaseModel):
+    connection_config: Dict[str, Any]
+
+class DatabaseQueryRequest(BaseModel):
+    connection_config: Dict[str, Any]
+    query_config: Dict[str, Any]
+
+@router.post("/database-tables")
+async def get_database_tables(
+    request: DatabaseTableRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Get tables from connected database"""
+    try:
+        result = service.get_database_tables(request.connection_config)
+        return result
+    except Exception as e:
+        logger.error(f"Error getting database tables: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/database-generate")
+async def generate_database_sql_query(
+    request: DatabaseQueryRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Generate and execute SQL query on connected database"""
+    try:
+        result = service.generate_database_sql_query({
+            "connection_config": request.connection_config,
+            "query_config": request.query_config
+        })
+        return result
+    except Exception as e:
+        logger.error(f"Error generating database SQL query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/database-execute")
+async def execute_database_query(
+    request: DatabaseQueryRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Execute query on connected database"""
+    try:
+        # Extract query from query_config
+        query = request.query_config.get("sql", "")
+        if not query:
+            raise HTTPException(status_code=400, detail="No SQL query provided")
+        
+        result = service.execute_database_query(
+            request.connection_config, 
+            query,
+            request.query_config.get("limit", 1000)
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing database query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class DatabasePreviewRequest(BaseModel):
+    connection_config: Dict[str, Any]
+    sql: str
+    limit: Optional[int] = 1000
+
+class DatabaseSaveRequest(BaseModel):
+    connection_config: Dict[str, Any]
+    sql: str
+    table_name: str
+    schema: Optional[str] = "processed_data"
+
+class DatabaseChunkedSaveRequest(BaseModel):
+    connection_config: Dict[str, Any]
+    sql: str
+    table_name: str
+    schema: Optional[str] = "processed_data"
+    chunk_size: Optional[int] = 1000
+    preserve_order: Optional[bool] = True
+
+class DatabaseSchemaRequest(BaseModel):
+    connection_config: Dict[str, Any]
+    table_name: str
+    schema_name: Optional[str] = "public"
+
+@router.post("/database-preview")
+async def preview_database_query(
+    request: DatabasePreviewRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Execute database query and return preview data (1000 rows)"""
+    try:
+        result = service.execute_database_query_preview({
+            "connection_config": request.connection_config,
+            "sql": request.sql,
+            "limit": request.limit
+        })
+        return result
+    except Exception as e:
+        logger.error(f"Error previewing database query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/database-save")
+async def save_database_query_to_warehouse(
+    request: DatabaseSaveRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Save database query results to data warehouse"""
+    try:
+        result = service.save_database_query_to_warehouse({
+            "connection_config": request.connection_config,
+            "sql": request.sql,
+            "table_name": request.table_name,
+            "schema": request.schema
+        })
+        return result
+    except Exception as e:
+        logger.error(f"Error saving database query to warehouse: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/database-save-chunked")
+async def save_database_query_to_warehouse_chunked(
+    request: DatabaseChunkedSaveRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Save database query results to data warehouse with chunked insertion and progress tracking"""
+    try:
+        result = service.save_database_query_to_warehouse_chunked({
+            "connection_config": request.connection_config,
+            "sql": request.sql,
+            "table_name": request.table_name,
+            "schema": request.schema,
+            "chunk_size": request.chunk_size,
+            "preserve_order": request.preserve_order
+        })
+        return result
+    except Exception as e:
+        logger.error(f"Error saving database query to warehouse with chunked insertion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/database-schema")
+async def get_database_table_schema(
+    request: DatabaseSchemaRequest,
+    service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """Get exact table schema from INFORMATION_SCHEMA"""
+    try:
+        from app.services.database_connection_service import DatabaseConnectionService
+        db_service = DatabaseConnectionService()
+        
+        result = db_service.get_table_schema(
+            request.connection_config,
+            request.table_name,
+            request.schema_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error getting database table schema: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

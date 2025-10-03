@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class ColumnMatchingRequest(BaseModel):
     left_table: str
     right_table: str
+    connection_config: Optional[Dict] = None  # For database mode
 
 class ColumnMatchingResponse(BaseModel):
     success: bool
@@ -38,10 +39,18 @@ async def suggest_column_relationships(
     Suggest column relationships between two tables based on naming patterns
     """
     try:
-        # Get all tables metadata
-        tables_metadata = sql_service.get_available_tables()
-        if not tables_metadata:
-            raise HTTPException(status_code=404, detail="No tables found")
+        # Get tables metadata based on mode
+        if request.connection_config:
+            # Database mode - get tables from database
+            db_response = sql_service.get_database_tables(request.connection_config)
+            if not db_response.get('success', False):
+                raise HTTPException(status_code=404, detail="Failed to get database tables")
+            tables_metadata = db_response.get('tables', [])
+        else:
+            # File mode - get tables from uploaded files
+            tables_metadata = sql_service.get_available_tables()
+            if not tables_metadata:
+                raise HTTPException(status_code=404, detail="No tables found")
         
         # Find the requested tables
         left_table_data = None

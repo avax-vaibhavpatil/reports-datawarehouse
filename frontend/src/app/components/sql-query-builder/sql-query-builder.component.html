@@ -85,10 +85,18 @@
           </div>
         </div>
 
-        <button type="button" mat-raised-button color="primary" (click)="addTable()">
-          <mat-icon>add</mat-icon>
-          Add Table
-        </button>
+        <div class="table-actions">
+          <button type="button" mat-raised-button color="primary" (click)="addTable()">
+            <mat-icon>add</mat-icon>
+            Add Table
+          </button>
+          
+          <button type="button" mat-raised-button color="warn" (click)="clearAllTables()" 
+                  [disabled]="tablesArray.length === 0">
+            <mat-icon>clear_all</mat-icon>
+            Clear All Tables
+          </button>
+        </div>
       </mat-card-content>
     </mat-card>
 

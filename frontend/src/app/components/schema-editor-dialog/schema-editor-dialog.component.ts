@@ -21,6 +21,8 @@ export interface SchemaEditorData {
   totalRows: number;
   columns: string[];
   sampleData: any[];
+  isDatabaseMode?: boolean;
+  connectionConfig?: any;
 }
 
 // Interface for column schema
@@ -79,6 +81,8 @@ export class SchemaEditorDialogComponent implements OnInit {
   isLoading = false;
   isValidating = false;
   schemaPreview: SchemaPreviewResponse | null = null;
+  isDatabaseMode = false;
+  connectionConfig: any = null;
   
   // PostgreSQL data type options
   postgresDataTypes = [
@@ -96,6 +100,10 @@ export class SchemaEditorDialogComponent implements OnInit {
     public dialogRef: MatDialogRef<SchemaEditorDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: SchemaEditorData
   ) {
+    // Initialize database mode properties
+    this.isDatabaseMode = data.isDatabaseMode || false;
+    this.connectionConfig = data.connectionConfig || null;
+    
     // Initialize the form
     this.schemaForm = this.fb.group({
       tableName: ['', [Validators.required, Validators.pattern('^[a-zA-Z][a-zA-Z0-9_]*$')]],
@@ -332,14 +340,21 @@ ${columnDefs},
       query_sql: this.data.sql,
       db_schema: this.schemaForm.get('schema')?.value || 'processed_data',
       user_table_name: this.schemaForm.get('tableName')?.value,
-      column_corrections: columnCorrections
+      column_corrections: columnCorrections,
+      is_database_mode: this.isDatabaseMode,
+      connection_config: this.connectionConfig
     };
 
     this.snackBar.open(`Creating table and inserting ${this.data.totalRows.toLocaleString()} records...`, 'Close', { 
       duration: 0  // Keep open until manually closed
     });
 
-    this.http.post<any>('http://localhost:8000/api/schema-editor/create-table', requestData)
+    // Use different endpoint for database mode
+    const endpoint = this.isDatabaseMode ? 
+      'http://localhost:8000/api/schema-editor/create-table-database' : 
+      'http://localhost:8000/api/schema-editor/create-table';
+
+    this.http.post<any>(endpoint, requestData)
       .subscribe({
         next: (response) => {
           this.isLoading = false;

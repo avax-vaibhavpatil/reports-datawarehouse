@@ -1,0 +1,12 @@
+{
+  "conn_new_db": {
+    "connection_id": "conn_new_db",
+    "db_type": "postgresql",
+    "host": "localhost",
+    "port": 5432,
+    "database": "new_db",
+    "username": "postgres",
+    "password": "***",
+    "connection_name": "new_db Database"
+  }
+}

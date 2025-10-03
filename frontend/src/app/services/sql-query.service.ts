@@ -43,6 +43,8 @@ export interface SQLQueryRequest {
   group_by?: string[];
   order_by?: OrderByConfig[];
   limit?: number;
+  source_type?: 'file' | 'database';
+  connection_config?: any;
 }
 
 export interface SQLQueryResponse {
@@ -70,10 +72,11 @@ export interface QueryPreviewResponse {
 
 export interface TableInfo {
   name: string;
-  filename: string;
+  filename?: string;
   columns: string[];
   row_count: number;
-  file_type: string;
+  file_type?: string;
+  source_type?: 'file' | 'database';
 }
 
 export interface JoinType {
@@ -153,6 +156,93 @@ export class SQLQueryService {
     
     return this.http.post(`${this.apiUrl}/export-csv`, request, {
       responseType: 'blob'
+    });
+  }
+
+  /**
+   * Get tables from connected database
+   */
+  getDatabaseTables(connectionConfig: any): Observable<{tables: TableInfo[], count: number}> {
+    return this.http.post<{tables: TableInfo[], count: number}>(`${this.apiUrl}/database-tables`, {
+      connection_config: connectionConfig
+    });
+  }
+
+  /**
+   * Generate and execute SQL query on connected database
+   */
+  generateDatabaseSQLQuery(connectionConfig: any, queryConfig: any): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-generate`, {
+      connection_config: connectionConfig,
+      query_config: queryConfig
+    });
+  }
+
+  /**
+   * Execute query on connected database
+   */
+  executeDatabaseQuery(connectionConfig: any, query: string, limit: number = 1000): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-execute`, {
+      connection_config: connectionConfig,
+      query_config: {
+        sql: query,
+        limit: limit
+      }
+    });
+  }
+
+  /**
+   * Preview database query results (1000 rows)
+   */
+  previewDatabaseQuery(connectionConfig: any, sql: string, limit: number = 1000): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-preview`, {
+      connection_config: connectionConfig,
+      sql: sql,
+      limit: limit
+    });
+  }
+
+  /**
+   * Save database query results to data warehouse
+   */
+  saveDatabaseQueryToWarehouse(connectionConfig: any, sql: string, tableName: string, schema: string = 'processed_data'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-save`, {
+      connection_config: connectionConfig,
+      sql: sql,
+      table_name: tableName,
+      schema: schema
+    });
+  }
+
+  /**
+   * Save database query results to data warehouse with chunked insertion and progress tracking
+   */
+  saveDatabaseQueryToWarehouseChunked(
+    connectionConfig: any, 
+    sql: string, 
+    tableName: string, 
+    schema: string = 'processed_data',
+    chunkSize: number = 1000,
+    preserveOrder: boolean = true
+  ): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-save-chunked`, {
+      connection_config: connectionConfig,
+      sql: sql,
+      table_name: tableName,
+      schema: schema,
+      chunk_size: chunkSize,
+      preserve_order: preserveOrder
+    });
+  }
+
+  /**
+   * Get exact table schema from INFORMATION_SCHEMA
+   */
+  getDatabaseTableSchema(connectionConfig: any, tableName: string, schemaName: string = 'public'): Observable<any> {
+    return this.http.post(`${this.apiUrl}/database-schema`, {
+      connection_config: connectionConfig,
+      table_name: tableName,
+      schema_name: schemaName
     });
   }
 }

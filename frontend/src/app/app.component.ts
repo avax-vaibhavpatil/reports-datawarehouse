@@ -24,6 +24,10 @@ import { MatIconModule } from '@angular/material/icon';
             <mat-icon>cloud_upload</mat-icon>
             Upload
           </button>
+          <button mat-button routerLink="/database-connection" routerLinkActive="active-nav">
+            <mat-icon>storage</mat-icon>
+            Database
+          </button>
           <button mat-button routerLink="/column-selection" routerLinkActive="active-nav">
             <mat-icon>view_column</mat-icon>
             Column Selection

@@ -1,0 +1,215 @@
+<div class="database-connection-container">
+  <div class="header">
+    <h2>Database Connection</h2>
+    <p>Connect to your source database to import tables and create queries</p>
+  </div>
+
+  <!-- Step 1: Connection Configuration -->
+  <div *ngIf="currentStep === 1" class="step-container">
+    <div class="step-header">
+      <h3>Step 1: Configure Database Connection</h3>
+      <div class="step-indicator">
+        <span class="step active">1</span>
+        <span class="step">2</span>
+        <span class="step">3</span>
+      </div>
+    </div>
+
+    <!-- Saved Connections -->
+    <div *ngIf="savedConnections.length > 0" class="saved-connections">
+      <h4>Saved Connections</h4>
+      <div class="connection-list">
+        <div *ngFor="let conn of savedConnections" class="connection-item" 
+             (click)="loadSavedConnection(conn)">
+          <div class="connection-info">
+            <strong>{{ conn.connection_name || conn.database }}</strong>
+            <span class="connection-details">{{ conn.db_type }} - {{ conn.host }}:{{ conn.port }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" (click)="loadSavedConnection(conn); $event.stopPropagation()">
+            Load
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connection Form -->
+    <form class="connection-form" (ngSubmit)="testConnection()">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="db_type">Database Type *</label>
+          <select id="db_type" [(ngModel)]="connection.db_type" name="db_type" 
+                  (change)="onDatabaseTypeChange()" required>
+            <option *ngFor="let db of supportedDatabases" [value]="db.type">
+              {{ db.name }}
+            </option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="connection_name">Connection Name</label>
+          <input type="text" id="connection_name" [(ngModel)]="connection.connection_name" 
+                 name="connection_name" placeholder="My Database Connection">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="host">Host *</label>
+          <input type="text" id="host" [(ngModel)]="connection.host" name="host" 
+                 placeholder="localhost" required>
+        </div>
+        <div class="form-group">
+          <label for="port">Port *</label>
+          <input type="number" id="port" [(ngModel)]="connection.port" name="port" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="database">Database Name *</label>
+        <input type="text" id="database" [(ngModel)]="connection.database" name="database" 
+               placeholder="mydatabase" required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="username">Username *</label>
+          <input type="text" id="username" [(ngModel)]="connection.username" name="username" 
+                 placeholder="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password *</label>
+          <input type="password" id="password" [(ngModel)]="connection.password" name="password" 
+                 placeholder="password" required>
+        </div>
+      </div>
+
+      <!-- Test Connection Result -->
+      <div *ngIf="connectionTested" class="test-result" 
+           [class.success]="connectionSuccess" [class.error]="!connectionSuccess">
+        <i class="icon" [class.icon-check]="connectionSuccess" [class.icon-error]="!connectionSuccess"></i>
+        {{ testMessage }}
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" (click)="resetForm()">
+          Reset
+        </button>
+        <button type="button" class="btn btn-primary" (click)="testConnection()" 
+                [disabled]="isTesting">
+          <span *ngIf="isTesting" class="spinner"></span>
+          {{ isTesting ? 'Testing...' : 'Test Connection' }}
+        </button>
+        <button type="button" class="btn btn-success" (click)="saveConnection()" 
+                [disabled]="!connectionSuccess || isConnecting">
+          <span *ngIf="isConnecting" class="spinner"></span>
+          {{ isConnecting ? 'Saving...' : 'Save & Continue' }}
+        </button>
+        <button type="button" class="btn btn-primary" (click)="discoverTables()" 
+                [disabled]="!connectionSuccess || isConnecting">
+          <span *ngIf="isConnecting" class="spinner"></span>
+          {{ isConnecting ? 'Discovering...' : 'Discover Tables' }}
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Step 2: Table Selection -->
+  <div *ngIf="currentStep === 2" class="step-container">
+    <div class="step-header">
+      <h3>Step 2: Select Tables</h3>
+      <div class="step-indicator">
+        <span class="step completed">1</span>
+        <span class="step active">2</span>
+        <span class="step">3</span>
+      </div>
+    </div>
+
+    <div class="table-selection">
+      <div class="selection-info">
+        <p>Found {{ discoveredTables.length }} tables. Select the tables you want to work with:</p>
+        <div class="selection-summary">
+          <span class="selected-count">{{ selectedTables.length }} selected</span>
+          <button *ngIf="selectedTables.length > 0" class="btn btn-sm btn-secondary" 
+                  (click)="selectedTables = []">
+            Clear All
+          </button>
+        </div>
+      </div>
+
+      <div class="tables-grid">
+        <div *ngFor="let table of discoveredTables" 
+             class="table-card" 
+             [class.selected]="isTableSelected(table.table_name)"
+             (click)="toggleTableSelection(table.table_name)">
+          <div class="table-header">
+            <h4>{{ table.table_name }}</h4>
+            <span class="row-count">{{ table.row_count.toLocaleString() }} rows</span>
+          </div>
+          <div class="table-columns">
+            <div *ngFor="let column of table.columns.slice(0, 3)" class="column-info">
+              <span class="column-name">{{ column.name }}</span>
+              <span class="column-type">{{ column.type }}</span>
+            </div>
+            <div *ngIf="table.columns.length > 3" class="more-columns">
+              +{{ table.columns.length - 3 }} more columns
+            </div>
+          </div>
+          <div class="table-foreign-keys" *ngIf="table.foreign_keys.length > 0">
+            <span class="fk-label">Foreign Keys:</span>
+            <span *ngFor="let fk of table.foreign_keys.slice(0, 2)" class="fk-info">
+              {{ fk.column }} → {{ fk.referenced_table }}.{{ fk.referenced_column }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-actions">
+        <button class="btn btn-secondary" (click)="previousStep()">
+          Back
+        </button>
+        <button class="btn btn-primary" (click)="proceedToQueryBuilder()" 
+                [disabled]="selectedTables.length === 0">
+          Continue to Query Builder
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Query Builder -->
+  <div *ngIf="currentStep === 3" class="step-container">
+    <div class="step-header">
+      <h3>Step 3: Query Builder</h3>
+      <div class="step-indicator">
+        <span class="step completed">1</span>
+        <span class="step completed">2</span>
+        <span class="step active">3</span>
+      </div>
+    </div>
+
+    <div class="query-builder">
+      <div class="selected-tables-info">
+        <h4>Selected Tables</h4>
+        <div class="tables-list">
+          <div *ngFor="let table of getSelectedTablesInfo()" class="table-info">
+            <strong>{{ table.table_name }}</strong>
+            <span class="table-details">{{ table.columns.length }} columns, {{ table.row_count.toLocaleString() }} rows</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="query-interface">
+        <p>You can now use the SQL Query Builder to create queries using these tables.</p>
+        <p>The query builder will have access to all the selected tables and their relationships.</p>
+        
+        <div class="step-actions">
+          <button class="btn btn-secondary" (click)="previousStep()">
+            Back to Table Selection
+          </button>
+          <button class="btn btn-primary" (click)="proceedToQueryBuilder()">
+            Open Query Builder
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
