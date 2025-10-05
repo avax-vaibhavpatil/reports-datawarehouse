@@ -83,6 +83,8 @@ export class SchemaEditorDialogComponent implements OnInit {
   schemaPreview: SchemaPreviewResponse | null = null;
   isDatabaseMode = false;
   connectionConfig: any = null;
+  availableSchemas: any[] = [];
+  isLoadingSchemas = false;
   
   // PostgreSQL data type options
   postgresDataTypes = [
@@ -107,11 +109,19 @@ export class SchemaEditorDialogComponent implements OnInit {
     // Initialize the form
     this.schemaForm = this.fb.group({
       tableName: ['', [Validators.required, Validators.pattern('^[a-zA-Z][a-zA-Z0-9_]*$')]],
-      schema: ['processed_data', Validators.required]
+      schema: ['processed_data', Validators.required]  // Default to 'processed_data' schema for warehouse
     });
   }
 
   ngOnInit(): void {
+    // Load available schemas if in database mode
+    if (this.isDatabaseMode && this.connectionConfig) {
+      console.log('🔍 Database mode detected, loading schemas...', this.connectionConfig);
+      this.loadAvailableSchemas();
+    } else {
+      console.log('📁 File mode detected, using default schemas');
+    }
+    
     // Set up table name validation with debouncing
     this.schemaForm.get('tableName')?.valueChanges.pipe(
       debounceTime(500),
@@ -187,7 +197,9 @@ export class SchemaEditorDialogComponent implements OnInit {
       query_sql: this.data.sql,
       db_schema: schema,
       user_table_name: tableName,
-      limit: 100
+      limit: 100,
+      is_database_mode: this.isDatabaseMode,
+      connection_config: this.connectionConfig
     };
 
     this.http.post<SchemaPreviewResponse>('http://localhost:8000/api/schema-editor/preview', requestData)
@@ -211,6 +223,49 @@ export class SchemaEditorDialogComponent implements OnInit {
           this.isLoading = false;
           console.error('Schema preview error:', error);
           this.snackBar.open('Error connecting to backend', 'Close', { duration: 3000 });
+        }
+      });
+  }
+
+  /**
+   * Load available schemas from the connected database
+   */
+  loadAvailableSchemas(): void {
+    if (!this.connectionConfig) {
+      console.warn('No connection config available for schema detection');
+      return;
+    }
+
+    console.log('🔄 Starting schema detection with config:', this.connectionConfig);
+    this.isLoadingSchemas = true;
+    
+    const requestData = {
+      connection_config: this.connectionConfig
+    };
+
+    this.http.post<any>('http://localhost:8000/api/schema-editor/detect-schemas', requestData)
+      .subscribe({
+        next: (response) => {
+          console.log('📡 Schema detection response:', response);
+          this.isLoadingSchemas = false;
+          
+          if (response.success && response.schemas) {
+            this.availableSchemas = response.schemas;
+            console.log(`✅ Successfully loaded ${this.availableSchemas.length} schemas:`, this.availableSchemas);
+            
+            // For warehouse, always use processed_data schema regardless of detected schemas
+            // The detected schemas are from source database, but warehouse uses processed_data
+            this.schemaForm.patchValue({ schema: 'processed_data' });
+            console.log(`🎯 Using processed_data schema for warehouse (detected ${this.availableSchemas.length} schemas from source database)`);
+          } else {
+            console.error('❌ Failed to load schemas:', response.error);
+            this.snackBar.open('Failed to load database schemas', 'Close', { duration: 3000 });
+          }
+        },
+        error: (error) => {
+          this.isLoadingSchemas = false;
+          console.error('❌ Error loading schemas:', error);
+          this.snackBar.open('Error connecting to database for schema detection', 'Close', { duration: 3000 });
         }
       });
   }

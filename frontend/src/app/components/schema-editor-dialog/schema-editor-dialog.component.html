@@ -23,12 +23,52 @@
           <!-- Schema Selection -->
           <mat-form-field appearance="outline" class="full-width">
             <mat-label>Database Schema</mat-label>
-            <mat-select formControlName="schema">
-              <mat-option value="processed_data">processed_data (Query Results)</mat-option>
-              <mat-option value="raw_data">raw_data (Original Data)</mat-option>
-              <mat-option value="reports">reports (Business Reports)</mat-option>
-              <mat-option value="temp">temp (Temporary Tables)</mat-option>
+            <mat-select formControlName="schema" [disabled]="isLoadingSchemas">
+              <!-- Dynamic schemas from connected database -->
+              <mat-option *ngFor="let schema of availableSchemas" [value]="schema.name">
+                {{ schema.name }} ({{ schema.description }})
+              </mat-option>
+              
+              <!-- Fallback schemas if no database connection or schemas detected -->
+              <mat-option *ngIf="availableSchemas.length === 0 && !isLoadingSchemas && !isDatabaseMode" value="processed_data">
+                processed_data (Query Results)
+              </mat-option>
+              <mat-option *ngIf="availableSchemas.length === 0 && !isLoadingSchemas && !isDatabaseMode" value="raw_data">
+                raw_data (Original Data)
+              </mat-option>
+              <mat-option *ngIf="availableSchemas.length === 0 && !isLoadingSchemas && !isDatabaseMode" value="reports">
+                reports (Business Reports)
+              </mat-option>
+              <mat-option *ngIf="availableSchemas.length === 0 && !isLoadingSchemas && !isDatabaseMode" value="temp">
+                temp (Temporary Tables)
+              </mat-option>
+              
+              <!-- Default public schema for database mode when no schemas detected -->
+              <mat-option *ngIf="availableSchemas.length === 0 && !isLoadingSchemas && isDatabaseMode" value="public">
+                public (Default Database Schema)
+              </mat-option>
             </mat-select>
+            
+            <!-- Loading indicator for schema detection -->
+            <mat-icon matSuffix *ngIf="isLoadingSchemas">
+              <mat-spinner diameter="20"></mat-spinner>
+            </mat-icon>
+            
+            <!-- Success indicator -->
+            <mat-icon matSuffix *ngIf="!isLoadingSchemas && availableSchemas.length > 0" color="primary">
+              check_circle
+            </mat-icon>
+            
+            <mat-hint *ngIf="isLoadingSchemas">Detecting source database schemas...</mat-hint>
+            <mat-hint *ngIf="!isLoadingSchemas && availableSchemas.length > 0">
+              Found {{ availableSchemas.length }} schemas in source database (using processed_data for warehouse)
+            </mat-hint>
+            <mat-hint *ngIf="!isLoadingSchemas && availableSchemas.length === 0 && isDatabaseMode">
+              Using processed_data schema for warehouse (no source schemas detected)
+            </mat-hint>
+            <mat-hint *ngIf="!isLoadingSchemas && availableSchemas.length === 0 && !isDatabaseMode">
+              Using processed_data schema for warehouse
+            </mat-hint>
           </mat-form-field>
 
           <!-- Table Name Input -->

@@ -18,24 +18,30 @@ router = APIRouter(prefix="/api/schema-editor", tags=["Schema Editor"])
 class SchemaPreviewRequest(BaseModel):
     """Request model for generating schema preview"""
     query_sql: str                          # The SQL query that was executed
-    db_schema: str = "processed_data"       # PostgreSQL schema name
+    db_schema: str = "processed_data"       # PostgreSQL schema name (default to processed_data for warehouse)
     user_table_name: str                    # User-provided table name (required)
     limit: Optional[int] = 1000            # Limit for data analysis
+    is_database_mode: Optional[bool] = False # Whether this is database mode
+    connection_config: Optional[Dict[str, Any]] = None # Database connection config
 
 class TableValidationRequest(BaseModel):
     """Request model for table name validation"""
     table_name: str                         # Table name to validate
-    db_schema: str = "processed_data"       # PostgreSQL schema name
+    db_schema: str = "processed_data"       # PostgreSQL schema name (default to processed_data for warehouse)
 
 class TableCreationRequest(BaseModel):
     """Request model for creating table with data"""
     query_sql: str                          # Original SQL query
-    db_schema: str = "processed_data"       # PostgreSQL schema name  
+    db_schema: str = "processed_data"       # PostgreSQL schema name (default to processed_data for warehouse)
     user_table_name: str                    # User-provided table name
     column_corrections: Dict[str, str]      # User's data type corrections
     limit: Optional[int] = None             # None = insert all data
     is_database_mode: Optional[bool] = False # Whether this is database mode
     connection_config: Optional[Dict[str, Any]] = None # Database connection config
+
+class DatabaseSchemaDetectionRequest(BaseModel):
+    """Request model for detecting database schemas"""
+    connection_config: Dict[str, Any]       # Database connection configuration
 
 # Dependency to get services
 def get_data_pipeline_service() -> DataPipelineService:
@@ -76,17 +82,40 @@ def generate_schema_preview(
         
         # Step 1: Execute SQL query to get data for analysis
         logger.info("📊 Executing SQL query for schema analysis...")
-        query_result = sql_service.execute_raw_sql(
-            sql_query=request.query_sql,
-            limit=request.limit
-        )
         
-        # execute_raw_sql returns data directly, not a success/error structure
-        if not query_result or 'data' not in query_result:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Query execution failed: No data returned"
+        if request.is_database_mode and request.connection_config:
+            # For database mode, execute query against source database to get real schema
+            logger.info("🔍 Database mode: Executing query against source database for real schema extraction")
+            from ..services.database_connection_service import DatabaseConnectionService
+            db_service = DatabaseConnectionService()
+            query_result = db_service.execute_query(
+                connection_config=request.connection_config,
+                query=request.query_sql,
+                limit=request.limit or 100
             )
+        else:
+            # For file mode, use SQLite persistent database
+            logger.info("📁 File mode: Using SQLite persistent database")
+            query_result = sql_service.execute_raw_sql(
+                sql_query=request.query_sql,
+                limit=request.limit
+            )
+        
+        # Handle different response formats from different services
+        if request.is_database_mode and request.connection_config:
+            # Database connection service returns success/error structure
+            if not query_result.get('success', False):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Database query execution failed: {query_result.get('error', 'Unknown error')}"
+                )
+        else:
+            # SQLite service returns data directly
+            if not query_result or 'data' not in query_result:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Query execution failed: No data returned"
+                )
         
         # Step 2: Convert query results to DataFrame for analysis
         sample_data = query_result['data']
@@ -107,7 +136,9 @@ def generate_schema_preview(
             df=df,
             schema=request.db_schema,
             user_table_name=request.user_table_name,
-            query_sql=request.query_sql
+            query_sql=request.query_sql,
+            is_database_mode=request.is_database_mode or False,
+            connection_config=request.connection_config
         )
         
         if not preview_result.get('success', False):
@@ -383,4 +414,51 @@ async def create_table_with_data_database(
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error: {str(e)}"
+        )
+
+@router.post("/detect-schemas")
+async def detect_database_schemas(
+    request: DatabaseSchemaDetectionRequest
+) -> Dict[str, Any]:
+    """
+    Detect all available schemas in the connected database
+    
+    This endpoint queries the database's information_schema to get all
+    available schemas that the user can choose from for table creation.
+    """
+    try:
+        from ..services.database_connection_service import DatabaseConnectionService
+        
+        logger.info(f"🔍 Detecting schemas for database: {request.connection_config.get('database', 'unknown')}")
+        
+        # Initialize database connection service
+        db_service = DatabaseConnectionService()
+        
+        # Get all schemas from the database
+        schemas_result = db_service.get_database_schemas(request.connection_config)
+        
+        if not schemas_result["success"]:
+            logger.error(f"❌ Failed to detect schemas: {schemas_result.get('error', 'Unknown error')}")
+            raise HTTPException(
+                status_code=400,
+                detail=schemas_result.get('error', 'Failed to detect database schemas')
+            )
+        
+        schemas = schemas_result.get("schemas", [])
+        logger.info(f"✅ Detected {len(schemas)} schemas: {[s['name'] for s in schemas]}")
+        
+        return {
+            "success": True,
+            "schemas": schemas,
+            "total_count": len(schemas),
+            "message": f"Successfully detected {len(schemas)} schemas"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error detecting database schemas: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
         ) 

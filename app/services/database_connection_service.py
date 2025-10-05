@@ -369,3 +369,54 @@ class DatabaseConnectionService:
         else:
             # Default fallback
             return "TEXT"
+
+    def get_database_schemas(self, connection_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get all available schemas from the connected database
+        
+        Args:
+            connection_config: Database connection configuration
+            
+        Returns:
+            Dict containing success status and list of schemas
+        """
+        try:
+            connection_string = self._build_connection_string(connection_config)
+            engine = create_engine(connection_string, echo=False)
+            
+            with engine.connect() as conn:
+                # Query to get all schemas accessible to the current user
+                query = text("""
+                    SELECT 
+                        schema_name,
+                        schema_owner
+                    FROM information_schema.schemata 
+                    WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+                    ORDER BY schema_name
+                """)
+                
+                result = conn.execute(query)
+                
+                schemas = []
+                for row in result:
+                    schema_info = {
+                        'name': row.schema_name,
+                        'owner': row.schema_owner,
+                        'description': f"Schema owned by {row.schema_owner}"
+                    }
+                    schemas.append(schema_info)
+                
+                return {
+                    "success": True,
+                    "schemas": schemas,
+                    "total_count": len(schemas)
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting database schemas: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "schemas": [],
+                "total_count": 0
+            }

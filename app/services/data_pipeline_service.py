@@ -314,9 +314,150 @@ class DataPipelineService:
         postgres_type = type_mapping.get(dtype_str, 'TEXT')
         self.logger.debug(f"Mapped {dtype_str} -> {postgres_type}")
         return postgres_type
+
+    def _extract_source_database_schema(self, connection_config: dict, query_sql: str) -> dict:
+        """
+        Extract real schema information from source database tables used in the query
+        
+        Args:
+            connection_config: Database connection configuration
+            query_sql: SQL query to analyze
+            
+        Returns:
+            Dict mapping column names to their real schema information
+        """
+        try:
+            from .database_connection_service import DatabaseConnectionService
+            
+            db_service = DatabaseConnectionService()
+            schema_info = {}
+            
+            # Parse the SQL query to extract table names
+            table_names = self._extract_table_names_from_query(query_sql)
+            
+            self.logger.info(f"🔍 Extracting schema from tables: {table_names}")
+            
+            for table_name in table_names:
+                # Get schema for each table
+                table_schema = db_service.get_table_schema(connection_config, table_name, 'public')
+                
+                if table_schema.get('success'):
+                    for column in table_schema.get('columns', []):
+                        column_name = column['name'].lower()
+                        
+                        # Map source database type to PostgreSQL type
+                        postgres_type = self._map_source_type_to_postgres(
+                            column['data_type'],
+                            column.get('max_length'),
+                            column.get('precision'),
+                            column.get('scale')
+                        )
+                        
+                        schema_info[column_name] = {
+                            'source_type': column['data_type'],
+                            'postgres_type': postgres_type,
+                            'max_length': column.get('max_length'),
+                            'precision': column.get('precision'),
+                            'scale': column.get('scale'),
+                            'nullable': column['nullable'],
+                            'table': table_name
+                        }
+                        
+                        self.logger.debug(f"Extracted schema: {column_name} -> {postgres_type}")
+            
+            return schema_info
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error extracting source database schema: {str(e)}")
+            return {}
+
+    def _extract_table_names_from_query(self, query_sql: str) -> list:
+        """
+        Extract table names from SQL query
+        
+        Args:
+            query_sql: SQL query string
+            
+        Returns:
+            List of table names found in the query
+        """
+        import re
+        
+        # Simple regex to find table names after FROM and JOIN keywords
+        # This is a basic implementation - could be enhanced with proper SQL parsing
+        table_pattern = r'(?:FROM|JOIN)\s+(\w+)'
+        matches = re.findall(table_pattern, query_sql.upper())
+        
+        # Convert back to lowercase to match actual PostgreSQL table names
+        matches = [match.lower() for match in matches]
+        
+        # Remove duplicates and return
+        return list(set(matches))
+
+    def _map_source_type_to_postgres(self, source_type: str, max_length: int = None, 
+                                   precision: int = None, scale: int = None) -> str:
+        """
+        Map source database types to PostgreSQL types
+        
+        Args:
+            source_type: Source database data type
+            max_length: Maximum length for character types
+            precision: Precision for numeric types
+            scale: Scale for numeric types
+            
+        Returns:
+            PostgreSQL data type string
+        """
+        source_type_lower = source_type.lower()
+        
+        # Character types
+        if 'varchar' in source_type_lower or 'char' in source_type_lower:
+            if max_length:
+                return f"VARCHAR({max_length})"
+            else:
+                return "VARCHAR(255)"
+        elif 'text' in source_type_lower:
+            return "TEXT"
+        
+        # Numeric types
+        elif 'int' in source_type_lower:
+            if 'bigint' in source_type_lower:
+                return "BIGINT"
+            elif 'smallint' in source_type_lower:
+                return "SMALLINT"
+            else:
+                return "INTEGER"
+        elif 'decimal' in source_type_lower or 'numeric' in source_type_lower:
+            if precision and scale:
+                return f"DECIMAL({precision},{scale})"
+            elif precision:
+                return f"DECIMAL({precision},2)"
+            else:
+                return "DECIMAL(10,2)"
+        elif 'float' in source_type_lower or 'double' in source_type_lower:
+            return "DOUBLE PRECISION"
+        elif 'real' in source_type_lower:
+            return "REAL"
+        
+        # Date/Time types
+        elif 'date' in source_type_lower:
+            return "DATE"
+        elif 'timestamp' in source_type_lower or 'datetime' in source_type_lower:
+            return "TIMESTAMP"
+        elif 'time' in source_type_lower:
+            return "TIME"
+        
+        # Boolean types
+        elif 'bool' in source_type_lower:
+            return "BOOLEAN"
+        
+        # Default fallback
+        else:
+            return "TEXT"
     
     def generate_schema_preview(self, df: pd.DataFrame, schema: str = "processed_data", 
-                               user_table_name: str = None, query_sql: str = "") -> Dict[str, Any]:
+                               user_table_name: str = None, query_sql: str = "", 
+                               is_database_mode: bool = False, connection_config: dict = None) -> Dict[str, Any]:
         """
         Generate a preview of the CREATE TABLE statement for user review and editing.
         
@@ -370,12 +511,23 @@ class DataPipelineService:
             
             # Analyze each column and prepare for user review
             column_analysis = []
+            
+            # Extract real schema from source database if in database mode
+            source_schema_info = {}
+            if is_database_mode and connection_config and query_sql:
+                source_schema_info = self._extract_source_database_schema(connection_config, query_sql)
+                self.logger.info(f"🔍 Extracted schema from source database: {len(source_schema_info)} columns")
+            
             for column_name, dtype in df.dtypes.items():
                 # Get auto-detected type
                 detected_type = str(dtype)
                 
                 # Clean column name for PostgreSQL
                 clean_column_name = column_name.replace(' ', '_').replace('-', '_').lower()
+                
+                # Remove table prefix for schema matching (e.g., "ledger.lg_voucher_no" -> "lg_voucher_no")
+                if '.' in clean_column_name:
+                    clean_column_name = clean_column_name.split('.')[-1]
                 
                 # Analyze data for better suggestions (peek at actual values)
                 # Convert numpy types to native Python types for JSON serialization
@@ -386,8 +538,13 @@ class DataPipelineService:
                     else:
                         sample_values.append(val)
                 
-                # Get our current mapping (this will be improved with user corrections)
-                suggested_type = self.map_pandas_to_postgres_type(dtype, sample_values)
+                # Use real schema from source database if available, otherwise use pandas mapping
+                if clean_column_name in source_schema_info:
+                    suggested_type = source_schema_info[clean_column_name]['postgres_type']
+                    self.logger.debug(f"Using real schema for '{column_name}': {suggested_type}")
+                else:
+                    suggested_type = self.map_pandas_to_postgres_type(dtype, sample_values)
+                    self.logger.debug(f"Using pandas mapping for '{column_name}': {suggested_type}")
                 
                 column_info = {
                     'original_name': column_name,
