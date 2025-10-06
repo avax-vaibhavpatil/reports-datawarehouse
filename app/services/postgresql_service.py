@@ -49,6 +49,15 @@ class PostgreSQLService:
                 conn.close()
                 self.logger.info("PostgreSQL connection closed")
     
+    def get_connection_string(self) -> str:
+        """
+        Get PostgreSQL connection string for SQLAlchemy
+        
+        Returns:
+        str: PostgreSQL connection string
+        """
+        return f"postgresql://{self.db_config['user']}:{self.db_config['password']}@{self.db_config['host']}:{self.db_config['port']}/{self.db_config['database']}"
+    
     def test_connection(self) -> bool:
         """
         Test if PostgreSQL connection is working

@@ -49,6 +49,96 @@
   padding: 16px;
 }
 
+/* Success Card */
+.success-card {
+  border-left: 4px solid #4caf50;
+  background: linear-gradient(135deg, #e8f5e8, #f1f8e9);
+}
+
+.success-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.success-message mat-icon {
+  font-size: 32px;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+}
+
+.success-text h3 {
+  margin: 0 0 8px 0;
+  color: #2e7d32;
+  font-size: 18px;
+}
+
+.success-text p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #424242;
+}
+
+.success-text strong {
+  color: #1976d2;
+}
+
+/* Progress Card */
+.progress-card {
+  border-left: 4px solid #ff9800;
+  background: linear-gradient(135deg, #fff3e0, #fce4ec);
+}
+
+.progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.progress-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-header mat-icon {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+}
+
+.progress-header h3 {
+  margin: 0;
+  color: #f57c00;
+  font-size: 16px;
+}
+
+.progress-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-bar-container mat-progress-bar {
+  flex: 1;
+  height: 8px;
+}
+
+.progress-text {
+  font-weight: bold;
+  color: #f57c00;
+  min-width: 40px;
+  text-align: right;
+}
+
+.progress-message p {
+  margin: 0;
+  font-size: 14px;
+  color: #424242;
+  font-style: italic;
+}
+
 /* Table Name Validation */
 .validating {
   border-color: #ff9800 !important;

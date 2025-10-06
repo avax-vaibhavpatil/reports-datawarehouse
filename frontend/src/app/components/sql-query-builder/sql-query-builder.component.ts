@@ -754,7 +754,8 @@ export class SQLQueryBuilderComponent implements OnInit {
         columns: this.queryColumns,
         sampleData: this.queryResults.slice(0, 5),
         isDatabaseMode: true,
-        connectionConfig: this.connectionConfig
+        connectionConfig: this.connectionConfig,
+        limit: this.queryForm.get('limit')?.value || undefined // Pass limit from form
       };
 
       // Open the schema editor dialog
@@ -788,7 +789,8 @@ export class SQLQueryBuilderComponent implements OnInit {
         sql: this.generatedSQL,
         totalRows: this.totalRows,
         columns: this.queryColumns,
-        sampleData: this.queryResults.slice(0, 5)
+        sampleData: this.queryResults.slice(0, 5),
+        limit: this.queryForm.get('limit')?.value || undefined // Pass limit from form
       };
 
       // Open the schema editor dialog

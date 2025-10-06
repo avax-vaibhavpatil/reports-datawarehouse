@@ -837,3 +837,51 @@ class DataPipelineService:
         except Exception as e:
             self.logger.error(f"❌ Failed to create table {schema}.{table_name}: {e}")
             return False
+
+    def create_table_with_schema(self, schema: str, table_name: str, columns: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Create PostgreSQL table with specific schema information"""
+        try:
+            self.logger.info(f"🏗️ Creating table {schema}.{table_name} with provided schema...")
+            
+            # Build column definitions
+            column_definitions = []
+            for col in columns:
+                column_name = col['original_name'].replace(' ', '_').replace('-', '_')
+                column_type = col['suggested_pg_type']
+                column_definitions.append(f'"{column_name}" {column_type}')
+            
+            # Create the table
+            columns_sql = ",\n    ".join(column_definitions)
+            create_sql = f"""
+            CREATE TABLE IF NOT EXISTS {schema}.{table_name} (
+                id BIGSERIAL PRIMARY KEY,
+                {columns_sql},
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+            
+            self.logger.info(f"📝 Executing CREATE TABLE SQL:\n{create_sql}")
+            
+            with self.postgres_service.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(create_sql)
+                conn.commit()
+                
+                self.logger.info(f"✅ Successfully created table: {schema}.{table_name}")
+                return {
+                    'success': True,
+                    'table_name': table_name,
+                    'schema': schema,
+                    'full_table_name': f"{schema}.{table_name}",
+                    'columns_created': len(columns),
+                    'message': f"Table '{table_name}' created successfully in schema '{schema}'"
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to create table {schema}.{table_name}: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'message': f"Failed to create table: {str(e)}"
+            }

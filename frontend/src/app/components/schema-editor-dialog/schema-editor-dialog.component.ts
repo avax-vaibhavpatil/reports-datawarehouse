@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatCardModule } from '@angular/material/card';
 import { MatDividerModule } from '@angular/material/divider';
@@ -23,6 +24,7 @@ export interface SchemaEditorData {
   sampleData: any[];
   isDatabaseMode?: boolean;
   connectionConfig?: any;
+  limit?: number; // Optional limit from SQL query builder
 }
 
 // Interface for column schema
@@ -68,6 +70,7 @@ export interface SchemaPreviewResponse {
     MatSelectModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatProgressBarModule,
     MatSnackBarModule,
     MatCardModule,
     MatDividerModule,
@@ -86,11 +89,22 @@ export class SchemaEditorDialogComponent implements OnInit {
   availableSchemas: any[] = [];
   isLoadingSchemas = false;
   
+  // Two-step process state
+  tableCreated = false;
+  isCreatingTable = false;
+  isInsertingData = false;
+  insertionProgress = 0;
+  insertionMessage = '';
+  createdTableInfo: any = null;
+  
   // PostgreSQL data type options
   postgresDataTypes = [
-    'TEXT', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)',
+    'TEXT', 
+    'VARCHAR(15)', 'VARCHAR(25)', 'VARCHAR(30)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)',
+    'CHAR(1)', 'CHAR(10)',
     'INTEGER', 'BIGINT', 'SMALLINT', 
-    'DECIMAL(10,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
+    'DECIMAL(10,2)', 'DECIMAL(13,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
+    'NUMERIC(10,2)', 'NUMERIC(13,2)', 'NUMERIC(15,2)',
     'DOUBLE PRECISION', 'REAL', 'BOOLEAN', 
     'DATE', 'TIMESTAMP', 'TIME'
   ];
@@ -304,10 +318,41 @@ export class SchemaEditorDialogComponent implements OnInit {
    */
   updateColumnType(columnIndex: number, newType: string): void {
     if (this.schemaPreview && this.schemaPreview.columns[columnIndex]) {
-      this.schemaPreview.columns[columnIndex].suggested_pg_type = newType;
+      const column = this.schemaPreview.columns[columnIndex];
+      const originalType = column.suggested_pg_type;
+      
+      // Check if user is changing from a specific database type to generic TEXT
+      if (this.isChangingToGenericType(originalType, newType)) {
+        const confirmed = confirm(
+          `⚠️ Warning: You're changing "${column.original_name}" from "${originalType}" to "${newType}".\n\n` +
+          `This will lose the specific database schema information from your source database.\n\n` +
+          `Are you sure you want to continue?`
+        );
+        
+        if (!confirmed) {
+          // Revert the selection
+          return;
+        }
+      }
+      
+      column.suggested_pg_type = newType;
       // Regenerate CREATE TABLE SQL with updated types
       this.updateCreateTableSQL();
     }
+  }
+
+  /**
+   * Check if user is changing from a specific database type to a generic type
+   */
+  private isChangingToGenericType(originalType: string, newType: string): boolean {
+    // List of generic types that lose specificity
+    const genericTypes = ['TEXT', 'VARCHAR', 'CHAR'];
+    
+    // Check if original type is specific (has length/precision) and new type is generic
+    const originalIsSpecific = originalType.includes('(') && originalType.includes(')');
+    const newIsGeneric = genericTypes.some(gt => newType.startsWith(gt));
+    
+    return originalIsSpecific && newIsGeneric;
   }
 
   /**
@@ -373,7 +418,130 @@ ${columnDefs},
   }
 
   /**
-   * Save table to warehouse
+   * Step 1: Create table only (no data insertion)
+   */
+  createTableOnly(): void {
+    if (!this.canCreateTable()) {
+      this.snackBar.open('Please fix validation errors before creating table', 'Close', { duration: 3000 });
+      return;
+    }
+
+    this.isCreatingTable = true;
+
+    // Prepare column corrections from user edits
+    const columnCorrections: { [key: string]: string } = {};
+    if (this.schemaPreview?.columns) {
+      this.schemaPreview.columns.forEach(col => {
+        columnCorrections[col.clean_name] = col.suggested_pg_type;
+      });
+    }
+
+    const requestData = {
+      query_sql: this.data.sql,
+      db_schema: this.schemaForm.get('schema')?.value || 'processed_data',
+      user_table_name: this.schemaForm.get('tableName')?.value,
+      column_corrections: columnCorrections,
+      is_database_mode: this.isDatabaseMode,
+      connection_config: this.connectionConfig
+    };
+
+    this.snackBar.open('Creating table with correct schema...', 'Close', { 
+      duration: 0  // Keep open until manually closed
+    });
+
+    this.http.post<any>('http://localhost:8000/api/schema-editor/create-table-only', requestData)
+      .subscribe({
+        next: (response) => {
+          this.isCreatingTable = false;
+          
+          if (response.success) {
+            this.snackBar.dismiss(); // Close the "Creating..." message
+            this.snackBar.open(
+              `✅ Table "${response.table_name}" created successfully with correct schema!`, 
+              'Close', 
+              { duration: 8000 }
+            );
+            
+            // Update state for step 2
+            this.tableCreated = true;
+            this.createdTableInfo = response;
+            
+            // Disable table creation form
+            this.schemaForm.get('tableName')?.disable();
+            this.schemaForm.get('schema')?.disable();
+            
+          } else {
+            this.snackBar.dismiss();
+            this.snackBar.open(
+              `❌ Failed: ${response.message || response.error}`, 
+              'Close', 
+              { duration: 8000 }
+            );
+          }
+        },
+        error: (error) => {
+          this.isCreatingTable = false;
+          this.snackBar.dismiss();
+          
+          console.error('Table creation error:', error);
+          const errorMessage = error.error?.detail || error.message || 'Unknown error occurred';
+          this.snackBar.open(`❌ Error: ${errorMessage}`, 'Close', { duration: 8000 });
+        }
+      });
+  }
+
+  /**
+   * Step 2: Insert data into existing table with real-time progress
+   */
+  insertData(): void {
+    if (!this.tableCreated || !this.createdTableInfo) {
+      this.snackBar.open('Please create table first', 'Close', { duration: 3000 });
+      return;
+    }
+
+    this.isInsertingData = true;
+    this.insertionMessage = 'Inserting data...';
+
+    const requestData = {
+      query_sql: this.data.sql,
+      db_schema: this.schemaForm.get('schema')?.value || 'processed_data',
+      user_table_name: this.schemaForm.get('tableName')?.value,
+      limit: this.data.limit || null, // Use limit from SQL query builder, or null for all data
+      is_database_mode: this.isDatabaseMode,
+      connection_config: this.connectionConfig
+    };
+
+    // Simple HTTP request without streaming
+    this.http.post('http://localhost:8000/api/schema-editor/insert-data-stream', requestData).subscribe({
+      next: (response: any) => {
+        this.isInsertingData = false;
+        this.insertionMessage = 'Data insertion completed successfully!';
+        
+        this.snackBar.open(
+          `✅ Success! Data inserted successfully into table '${this.schemaForm.get('tableName')?.value}'`, 
+          'Close', 
+          { duration: 5000 }
+        );
+        
+        // Close dialog with success result
+        this.dialogRef.close({
+          success: true,
+          tableName: this.schemaForm.get('tableName')?.value,
+          schema: this.schemaForm.get('schema')?.value || 'processed_data',
+          message: 'Data insertion completed successfully!'
+        });
+      },
+      error: (error) => {
+        console.error('Error during data insertion:', error);
+        this.isInsertingData = false;
+        this.insertionMessage = 'Data insertion failed';
+        this.snackBar.open(`❌ Error: ${error.error?.message || error.message}`, 'Close', { duration: 5000 });
+      }
+    });
+  }
+
+  /**
+   * Save table to warehouse (legacy method - now calls createTableOnly)
    */
   onSave(): void {
     if (!this.canCreateTable()) {

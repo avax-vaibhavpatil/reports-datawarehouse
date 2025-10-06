@@ -152,6 +152,46 @@
         </mat-card-content>
       </mat-card>
 
+      <!-- Table Creation Success Message -->
+      <mat-card class="success-card" *ngIf="tableCreated && createdTableInfo">
+        <mat-card-content>
+          <div class="success-message">
+            <mat-icon color="primary">check_circle</mat-icon>
+            <div class="success-text">
+              <h3>✅ Table Created Successfully!</h3>
+              <p><strong>Table:</strong> {{ createdTableInfo.full_table_name }}</p>
+              <p><strong>Columns:</strong> {{ createdTableInfo.columns_created }} columns with correct schema</p>
+              <p><strong>Schema Applied:</strong> {{ createdTableInfo.schema_applied.join(', ') }}</p>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- Data Insertion Progress -->
+      <mat-card class="progress-card" *ngIf="isInsertingData">
+        <mat-card-content>
+          <div class="progress-container">
+            <div class="progress-header">
+              <mat-icon color="accent">cloud_upload</mat-icon>
+              <h3>Inserting Data...</h3>
+            </div>
+            
+            <div class="progress-bar-container">
+              <mat-progress-bar 
+                mode="determinate" 
+                [value]="insertionProgress"
+                color="accent">
+              </mat-progress-bar>
+              <span class="progress-text">{{ insertionProgress }}%</span>
+            </div>
+            
+            <div class="progress-message">
+              <p>{{ insertionMessage }}</p>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
+
       <!-- CREATE TABLE Preview -->
       <mat-card class="sql-card" *ngIf="schemaPreview?.create_sql">
         <mat-card-header>
@@ -177,13 +217,28 @@
       Cancel
     </button>
     
+    <!-- Step 1: Create Table Button -->
     <button mat-raised-button 
             color="primary" 
-            (click)="onSave()" 
-            [disabled]="!canCreateTable()"
-            class="save-button">
-      <mat-icon>save</mat-icon>
-      Create Table ({{ data.totalRows | number }} records)
+            (click)="createTableOnly()" 
+            [disabled]="!canCreateTable() || isCreatingTable || tableCreated"
+            class="create-table-button"
+            *ngIf="!tableCreated">
+      <mat-icon *ngIf="!isCreatingTable">storage</mat-icon>
+      <mat-spinner *ngIf="isCreatingTable" diameter="20"></mat-spinner>
+      {{ isCreatingTable ? 'Creating Table...' : 'Step 1: Create Table' }}
+    </button>
+    
+    <!-- Step 2: Insert Data Button -->
+    <button mat-raised-button 
+            color="accent" 
+            (click)="insertData()" 
+            [disabled]="!tableCreated || isInsertingData"
+            class="insert-data-button"
+            *ngIf="tableCreated">
+      <mat-icon *ngIf="!isInsertingData">cloud_upload</mat-icon>
+      <mat-spinner *ngIf="isInsertingData" diameter="20"></mat-spinner>
+      {{ isInsertingData ? 'Inserting Data...' : 'Step 2: Insert Data (' + (data.totalRows | number) + ' records)' }}
     </button>
   </mat-dialog-actions>
 </div> 

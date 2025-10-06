@@ -42,8 +42,13 @@ class ChunkedInsertionService:
         try:
             # Step 1: Get total row count
             self.logger.info("Getting total row count...")
-            count_query = f"SELECT COUNT(*) as total FROM ({sql_query}) as subquery"
-            count_result = self.db_connection_service.execute_query(connection_config, count_query)
+            # Remove any existing LIMIT clause for count query
+            base_query = sql_query
+            if "LIMIT" in base_query.upper():
+                base_query = base_query.rsplit("LIMIT", 1)[0].strip()
+            
+            count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as subquery"
+            count_result = self.db_connection_service.execute_query(connection_config, count_query, 1)
             
             if not count_result["success"]:
                 return {
@@ -57,12 +62,9 @@ class ChunkedInsertionService:
             
             # Step 2: Get sample data to determine schema
             self.logger.info("Getting sample data for schema analysis...")
-            # Check if query already has LIMIT clause
-            if "LIMIT" in sql_query.upper():
-                sample_query = sql_query
-            else:
-                sample_query = f"{sql_query} LIMIT 100"
-            sample_result = self.db_connection_service.execute_query(connection_config, sample_query)
+            # Use the base query (without LIMIT) and add our own LIMIT
+            sample_query = f"{base_query} LIMIT 100"
+            sample_result = self.db_connection_service.execute_query(connection_config, sample_query, 100)
             
             if not sample_result["success"]:
                 return {
@@ -143,6 +145,11 @@ class ChunkedInsertionService:
             from app.services.postgresql_service import PostgreSQLService
             postgres_service = PostgreSQLService()
             
+            # Remove any existing LIMIT clause from the base query
+            base_query = sql_query
+            if "LIMIT" in base_query.upper():
+                base_query = base_query.rsplit("LIMIT", 1)[0].strip()
+            
             # Calculate offset for descending order if needed
             offset = 0
             
@@ -154,11 +161,6 @@ class ChunkedInsertionService:
                 # Build query for current chunk
                 if preserve_order:
                     # For descending order, we need to reverse the order
-                    # Remove existing LIMIT if present
-                    base_query = sql_query
-                    if "LIMIT" in base_query.upper():
-                        base_query = base_query.rsplit("LIMIT", 1)[0].strip()
-                    
                     chunk_query = f"""
                         SELECT * FROM (
                             {base_query}
@@ -167,16 +169,14 @@ class ChunkedInsertionService:
                         LIMIT {current_chunk_size} OFFSET {offset}
                     """
                 else:
-                    # Remove existing LIMIT if present and add new one
-                    base_query = sql_query
-                    if "LIMIT" in base_query.upper():
-                        base_query = base_query.rsplit("LIMIT", 1)[0].strip()
+                    # Use base query and add LIMIT/OFFSET
                     chunk_query = f"{base_query} LIMIT {current_chunk_size} OFFSET {offset}"
                 
                 # Execute chunk query
                 chunk_result = self.db_connection_service.execute_query(
                     connection_config, 
-                    chunk_query
+                    chunk_query,
+                    current_chunk_size
                 )
                 
                 if not chunk_result["success"]:
@@ -338,11 +338,12 @@ class ChunkedInsertionService:
     def _extract_schema_from_query(self, connection_config: Dict[str, Any], sql_query: str) -> Dict[str, Any]:
         """Extract schema information from the SQL query by getting exact schema from source tables"""
         try:
-            # For simplicity, we'll extract schema from the first table in the query
-            # In a real implementation, you'd parse the SQL to identify all tables
+            # Use the same schema extraction logic as DataPipelineService
+            # This ensures consistency between preview and table creation
+            self.logger.info("🔍 Using DataPipelineService schema extraction logic")
             
             # Get sample data to identify columns
-            sample_result = self.db_connection_service.execute_query(connection_config, sql_query, limit=1)
+            sample_result = self.db_connection_service.execute_query(connection_config, sql_query, limit=100)
             
             if not sample_result["success"]:
                 return {
@@ -352,73 +353,31 @@ class ChunkedInsertionService:
             
             # Get column information from the query result
             columns = sample_result.get("columns", [])
+            sample_data = sample_result.get("data", [])
             
-            if not columns:
+            if not columns or not sample_data:
                 return {
                     "success": False,
-                    "message": "No columns found in query result"
+                    "message": "No columns or data found in query result"
                 }
             
-            # Try to get exact schema from the source table
-            # For now, we'll use a simple approach - assume the first table in the query
-            # In a real implementation, you'd parse the SQL to get the actual table name
-            table_name = self._extract_table_name_from_query(sql_query)
+            # Create DataFrame for schema analysis
+            import pandas as pd
+            df = pd.DataFrame(sample_data, columns=columns)
             
-            if table_name:
-                # Get exact schema from the source table
-                schema_result = self.db_connection_service.get_table_schema(
-                    connection_config, table_name, 'public'
-                )
-                
-                if schema_result["success"]:
-                    # Map the source schema to our query columns
-                    column_schemas = []
-                    source_columns = {col["name"]: col for col in schema_result["columns"]}
-                    
-                    for column_name in columns:
-                        if column_name in source_columns:
-                            source_col = source_columns[column_name]
-                            # Map the source data type to PostgreSQL
-                            pg_type = self.db_connection_service.map_data_type_to_postgres(
-                                source_col["data_type"],
-                                source_col.get("max_length"),
-                                source_col.get("precision"),
-                                source_col.get("scale")
-                            )
-                            column_schemas.append({
-                                "name": column_name,
-                                "type": pg_type,
-                                "nullable": source_col["nullable"]
-                            })
-                        else:
-                            # Fallback for computed columns or columns not in source table
-                            column_schemas.append({
-                                "name": column_name,
-                                "type": "TEXT",
-                                "nullable": True
-                            })
-                    
-                    return {
-                        "success": True,
-                        "columns": column_schemas,
-                        "column_count": len(column_schemas)
-                    }
+            # Use DataPipelineService to extract real schema from source database
+            schema_result = self.pipeline_service._extract_source_database_schema(
+                connection_config=connection_config,
+                query_sql=sql_query
+            )
             
-            # Fallback: create columns with default types
-            self.logger.info("Using fallback schema creation with default types")
-            column_schemas = []
-            for column_name in columns:
-                column_schemas.append({
-                    "name": column_name,
-                    "type": "TEXT",  # Default type
-                    "nullable": True
-                })
-            
-            return {
-                "success": True,
-                "columns": column_schemas,
-                "column_count": len(column_schemas)
-            }
+            if schema_result["success"]:
+                self.logger.info(f"✅ Successfully extracted real schema: {len(schema_result['columns'])} columns")
+                return schema_result
+            else:
+                self.logger.warning(f"⚠️ Schema extraction failed: {schema_result.get('message', 'Unknown error')}")
+                # Fallback to generic schema
+                return self._create_fallback_schema(columns)
             
         except Exception as e:
             self.logger.error(f"Error extracting schema from query: {e}")
@@ -427,27 +386,22 @@ class ChunkedInsertionService:
                 "message": f"Schema extraction failed: {str(e)}"
             }
     
-    def _extract_table_name_from_query(self, sql_query: str) -> str:
-        """Extract table name from SQL query (simplified approach)"""
-        try:
-            # Simple regex to extract table name from SELECT statement
-            import re
-            
-            # Look for FROM clause
-            match = re.search(r'FROM\s+(\w+)', sql_query, re.IGNORECASE)
-            if match:
-                return match.group(1)
-            
-            # Look for JOIN clause
-            match = re.search(r'JOIN\s+(\w+)', sql_query, re.IGNORECASE)
-            if match:
-                return match.group(1)
-            
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting table name: {e}")
-            return None
+    def _create_fallback_schema(self, columns: List[str]) -> Dict[str, Any]:
+        """Create fallback schema with generic types"""
+        self.logger.info("Using fallback schema creation with default types")
+        column_schemas = []
+        for column_name in columns:
+            column_schemas.append({
+                "name": column_name,
+                "type": "TEXT",  # Default type
+                "nullable": True
+            })
+        
+        return {
+            "success": True,
+            "columns": column_schemas,
+            "column_count": len(column_schemas)
+        }
     
     def _infer_postgres_type(self, sample_value: Any, column_name: str) -> str:
         """Infer PostgreSQL data type from sample value"""
@@ -538,3 +492,169 @@ class ChunkedInsertionService:
             "inserted_rows": 0,
             "total_rows": 0
         }
+
+    def insert_data_with_progress(
+        self,
+        query_sql: str,
+        schema: str,
+        table_name: str,
+        limit: Optional[int] = None,
+        is_database_mode: bool = False,
+        connection_config: Optional[Dict[str, Any]] = None,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
+        """
+        Insert data into existing table with progress tracking.
+        
+        This method is designed to work with the new two-step process where
+        the table is already created with the correct schema.
+        
+        Args:
+            query_sql: SQL query to execute
+            schema: Target schema name
+            table_name: Target table name
+            limit: Maximum rows to insert (None = all)
+            is_database_mode: Whether using database mode
+            connection_config: Database connection config
+            progress_callback: Function to call with progress updates
+            
+        Returns:
+            Dict with insertion results
+        """
+        try:
+            start_time = time.time()
+            self.logger.info(f"🚀 Starting data insertion into {schema}.{table_name}")
+            
+            # Step 1: Determine total rows
+            self.logger.info("Determining total rows to insert...")
+            
+            # Remove any existing LIMIT clause from the base query for counting
+            base_query = query_sql
+            if "LIMIT" in base_query.upper():
+                base_query = base_query.rsplit("LIMIT", 1)[0].strip()
+                self.logger.info("Removed existing LIMIT clause from query for counting")
+            
+            if limit:
+                # If limit is provided, use it
+                total_rows = limit
+                self.logger.info(f"Using provided limit: {total_rows} rows")
+            else:
+                # If no limit provided, get actual count of all data
+                self.logger.info("No limit provided, counting all available rows...")
+                
+                if is_database_mode and connection_config:
+                    # Count all rows from source database
+                    count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as subquery"
+                    count_result = self.db_connection_service.execute_query(connection_config, count_query, 1)
+                    
+                    if count_result["success"] and count_result["data"]:
+                        total_rows = count_result["data"][0]["total"]
+                        self.logger.info(f"Found {total_rows:,} total rows in source data")
+                    else:
+                        self.logger.warning("Could not count rows, using default limit")
+                        total_rows = 10000
+                else:
+                    # For file mode, we'll use a reasonable default
+                    total_rows = 10000
+                    self.logger.info(f"File mode: using default limit of {total_rows} rows")
+            
+            # Remove any existing LIMIT clause from the base query for data insertion
+            if "LIMIT" in base_query.upper():
+                base_query = base_query.rsplit("LIMIT", 1)[0].strip()
+                self.logger.info("Removed existing LIMIT clause from query for data insertion")
+            
+            # Step 2: Insert data in chunks
+            chunk_size = 1000
+            inserted_rows = 0
+            
+            # Calculate number of chunks
+            num_chunks = (total_rows + chunk_size - 1) // chunk_size
+            
+            for chunk_index in range(num_chunks):
+                offset = chunk_index * chunk_size
+                chunk_limit = min(chunk_size, total_rows - offset)
+                
+                # Build query with LIMIT and OFFSET
+                if is_database_mode and connection_config:
+                    chunk_query = f"{base_query} LIMIT {chunk_limit} OFFSET {offset}"
+                    chunk_result = self.db_connection_service.execute_query(connection_config, chunk_query, chunk_limit)
+                    
+                    if not chunk_result["success"]:
+                        return {
+                            "success": False,
+                            "error": f"Failed to get chunk {chunk_index + 1}",
+                            "message": chunk_result.get("message", "Unknown error")
+                        }
+                    
+                    chunk_data = chunk_result["data"]
+                    columns = chunk_result["columns"]
+                    
+                else:
+                    # File mode - use base_query without OFFSET for SQLite compatibility
+                    chunk_query = f"{base_query} LIMIT {chunk_limit} OFFSET {offset}"
+                    from ..services.sql_query_service import SQLQueryService
+                    sql_service = SQLQueryService()
+                    chunk_result = sql_service.execute_raw_sql(chunk_query)
+                    
+                    if not chunk_result or 'data' not in chunk_result:
+                        return {
+                            "success": False,
+                            "error": f"Failed to get chunk {chunk_index + 1}",
+                            "message": "No data returned"
+                        }
+                    
+                    chunk_data = chunk_result['data']
+                    columns = list(chunk_data[0].keys()) if chunk_data else []
+                
+                # Insert chunk into PostgreSQL
+                if chunk_data:
+                    df_chunk = pd.DataFrame(chunk_data, columns=columns)
+                    
+                    # Insert into PostgreSQL using SQLAlchemy engine
+                    from ..services.postgresql_service import PostgreSQLService
+                    from sqlalchemy import create_engine
+                    
+                    pg_service = PostgreSQLService()
+                    connection_string = pg_service.get_connection_string()
+                    engine = create_engine(connection_string)
+                    
+                    # Prepare data for insertion (exclude id column if it exists)
+                    insert_columns = [col for col in df_chunk.columns if col != 'id']
+                    df_insert = df_chunk[insert_columns] if insert_columns else df_chunk
+                    
+                    # Insert data using SQLAlchemy engine
+                    df_insert.to_sql(
+                        name=table_name,
+                        con=engine,
+                        schema=schema,
+                        if_exists='append',
+                        index=False,
+                        method='multi'
+                    )
+                    
+                    inserted_rows += len(chunk_data)
+                    
+                    # Log progress (simplified - no callback)
+                    self.logger.info(f"Inserted chunk {chunk_index + 1}: {len(chunk_data)} rows")
+            
+            # Calculate final statistics
+            total_time = time.time() - start_time
+            rows_per_second = inserted_rows / total_time if total_time > 0 else 0
+            
+            self.logger.info(f"✅ Data insertion completed: {inserted_rows:,} rows in {total_time:.2f}s ({rows_per_second:.1f} rows/sec)")
+            
+            return {
+                "success": True,
+                "inserted_rows": inserted_rows,
+                "total_time": total_time,
+                "rows_per_second": rows_per_second,
+                "message": f"Successfully inserted {inserted_rows:,} rows"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in data insertion: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": f"Data insertion failed: {str(e)}"
+            }

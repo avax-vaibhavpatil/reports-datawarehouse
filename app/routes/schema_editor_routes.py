@@ -1,12 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import sqlite3
 import logging
+import json
+import asyncio
 from pydantic import BaseModel
 
 from ..services.data_pipeline_service import DataPipelineService
 from ..services.sql_query_service import SQLQueryService
+from ..services.chunked_insertion_service import ChunkedInsertionService
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -43,6 +47,24 @@ class DatabaseSchemaDetectionRequest(BaseModel):
     """Request model for detecting database schemas"""
     connection_config: Dict[str, Any]       # Database connection configuration
 
+class TableOnlyCreationRequest(BaseModel):
+    """Request model for creating table only (no data insertion)"""
+    query_sql: str                          # Original SQL query
+    db_schema: str = "processed_data"       # PostgreSQL schema name (default to processed_data for warehouse)
+    user_table_name: str                    # User-provided table name
+    column_corrections: Dict[str, str]      # User's data type corrections
+    is_database_mode: Optional[bool] = False # Whether this is database mode
+    connection_config: Optional[Dict[str, Any]] = None # Database connection config
+
+class DataInsertionRequest(BaseModel):
+    """Request model for inserting data into existing table with progress tracking"""
+    query_sql: str                          # Original SQL query
+    db_schema: str = "processed_data"       # PostgreSQL schema name
+    user_table_name: str                    # User-provided table name
+    limit: Optional[int] = None             # None = insert all data
+    is_database_mode: Optional[bool] = False # Whether this is database mode
+    connection_config: Optional[Dict[str, Any]] = None # Database connection config
+
 # Dependency to get services
 def get_data_pipeline_service() -> DataPipelineService:
     """Dependency to provide DataPipelineService instance"""
@@ -51,6 +73,10 @@ def get_data_pipeline_service() -> DataPipelineService:
 def get_sql_query_service() -> SQLQueryService:
     """Dependency to provide SQLQueryService instance"""
     return SQLQueryService()
+
+def get_chunked_insertion_service() -> ChunkedInsertionService:
+    """Dependency to provide ChunkedInsertionService instance"""
+    return ChunkedInsertionService()
 
 @router.post("/preview")
 def generate_schema_preview(
@@ -416,6 +442,160 @@ async def create_table_with_data_database(
             detail=f"Unexpected error: {str(e)}"
         )
 
+@router.post("/create-table-only")
+async def create_table_only(
+    request: TableOnlyCreationRequest,
+    pipeline_service: DataPipelineService = Depends(get_data_pipeline_service),
+    sql_service: SQLQueryService = Depends(get_sql_query_service)
+) -> Dict[str, Any]:
+    """
+    Create PostgreSQL table with correct schema only (no data insertion).
+    
+    This endpoint:
+    1. Validates table name and checks for duplicates
+    2. Uses DataPipelineService to extract real schema from source database
+    3. Creates PostgreSQL table with correct schema
+    4. Returns success message (no data insertion)
+    
+    Args:
+        request: Table creation request with schema corrections
+        
+    Returns:
+        Dict containing creation results and table information
+    """
+    try:
+        logger.info(f"🏗️ Table-only creation requested: {request.db_schema}.{request.user_table_name}")
+        
+        # Step 1: Validate table name and check for duplicates
+        name_validation = pipeline_service.validate_table_name(request.user_table_name)
+        existence_check = pipeline_service.check_table_exists(request.db_schema, request.user_table_name)
+        
+        if not name_validation['is_valid']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid table name: {', '.join(name_validation['errors'])}"
+            )
+        
+        if existence_check['exists']:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Table already exists: {existence_check['message']}"
+            )
+        
+        # Step 2: Execute SQL query to get sample data for schema analysis
+        logger.info("📊 Executing SQL query for schema analysis...")
+        
+        if request.is_database_mode and request.connection_config:
+            # For database mode, execute query against source database to get real schema
+            logger.info("🔍 Database mode: Executing query against source database for real schema extraction")
+            from ..services.database_connection_service import DatabaseConnectionService
+            db_service = DatabaseConnectionService()
+            query_result = db_service.execute_query(
+                connection_config=request.connection_config,
+                query=request.query_sql,
+                limit=100
+            )
+        else:
+            # For file mode, use SQLite persistent database
+            logger.info("📁 File mode: Using SQLite persistent database")
+            query_result = sql_service.execute_raw_sql(
+                sql_query=request.query_sql,
+                limit=100
+            )
+        
+        # Handle different response formats from different services
+        if request.is_database_mode and request.connection_config:
+            # Database connection service returns success/error structure
+            if not query_result.get('success', False):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Database query execution failed: {query_result.get('error', 'Unknown error')}"
+                )
+        else:
+            # SQLite service returns data directly
+            if not query_result or 'data' not in query_result:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Query execution failed: No data returned"
+                )
+        
+        # Step 3: Convert query results to DataFrame for analysis
+        sample_data = query_result['data']
+        columns = query_result['columns']
+        
+        if not sample_data or not columns:
+            raise HTTPException(
+                status_code=400,
+                detail="Query returned no data for schema analysis"
+            )
+        
+        # Create DataFrame from query results
+        df = pd.DataFrame(sample_data, columns=columns)
+        logger.info(f"📋 Created DataFrame: {len(df)} rows, {len(df.columns)} columns")
+        
+        # Step 4: Generate schema preview using our pipeline service
+        preview_result = pipeline_service.generate_schema_preview(
+            df=df,
+            schema=request.db_schema,
+            user_table_name=request.user_table_name,
+            query_sql=request.query_sql,
+            is_database_mode=request.is_database_mode or False,
+            connection_config=request.connection_config
+        )
+        
+        if not preview_result.get('success', False):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Schema preview generation failed: {preview_result.get('error', 'Unknown error')}"
+            )
+        
+        # Step 5: Apply user's column corrections to the schema
+        logger.info("🔧 Applying user's column corrections...")
+        corrected_columns = []
+        for column in preview_result['columns']:
+            column_name = column['original_name']
+            if column_name in request.column_corrections:
+                corrected_type = request.column_corrections[column_name]
+                logger.info(f"📝 Correcting {column_name}: {column['suggested_pg_type']} → {corrected_type}")
+                column['suggested_pg_type'] = corrected_type
+            corrected_columns.append(column)
+        
+        # Step 6: Create table with corrected schema
+        logger.info(f"🏗️ Creating table {request.db_schema}.{request.user_table_name} with corrected schema...")
+        
+        creation_result = pipeline_service.create_table_with_schema(
+            schema=request.db_schema,
+            table_name=request.user_table_name,
+            columns=corrected_columns
+        )
+        
+        if creation_result['success']:
+            logger.info(f"✅ Table creation completed: {creation_result['message']}")
+            return {
+                'success': True,
+                'table_name': request.user_table_name,
+                'schema': request.db_schema,
+                'full_table_name': f"{request.db_schema}.{request.user_table_name}",
+                'columns_created': len(corrected_columns),
+                'schema_applied': [col['suggested_pg_type'] for col in corrected_columns],
+                'message': f"Table '{request.user_table_name}' created successfully in schema '{request.db_schema}' with correct schema"
+            }
+        else:
+            logger.error(f"❌ Table creation failed: {creation_result.get('error')}")
+            raise HTTPException(
+                status_code=500,
+                detail=creation_result.get('message', 'Table creation failed')
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in table-only creation: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error: {str(e)}"
+        )
+
 @router.post("/detect-schemas")
 async def detect_database_schemas(
     request: DatabaseSchemaDetectionRequest
@@ -461,4 +641,71 @@ async def detect_database_schemas(
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+@router.post("/insert-data-stream")
+async def insert_data_simple(
+    request: DataInsertionRequest,
+    chunked_service: ChunkedInsertionService = Depends(get_chunked_insertion_service),
+    sql_service: SQLQueryService = Depends(get_sql_query_service)
+):
+    """
+    Insert data into existing table with simple success/error response.
+    
+    Args:
+        request: Data insertion request
+        
+    Returns:
+        Simple JSON response with success/error status
+    """
+    
+    try:
+        logger.info(f"🚀 Starting data insertion: {request.db_schema}.{request.user_table_name}")
+        
+        # Step 1: Validate table exists
+        pipeline_service = DataPipelineService()
+        existence_check = pipeline_service.check_table_exists(request.db_schema, request.user_table_name)
+        
+        if not existence_check['exists']:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Table {request.db_schema}.{request.user_table_name} does not exist. Please create table first.'
+            )
+        
+        # Step 2: Insert data (no progress callback)
+        insertion_result = chunked_service.insert_data_with_progress(
+            query_sql=request.query_sql,
+            schema=request.db_schema,
+            table_name=request.user_table_name,
+            limit=request.limit,
+            is_database_mode=request.is_database_mode,
+            connection_config=request.connection_config,
+            progress_callback=None  # No progress tracking
+        )
+        
+        if insertion_result.get('success'):
+            logger.info(f"✅ Data insertion completed: {insertion_result['inserted_rows']:,} rows")
+            return {
+                'success': True,
+                'message': f'Successfully inserted {insertion_result["inserted_rows"]:,} rows',
+                'table_name': request.user_table_name,
+                'schema': request.db_schema,
+                'inserted_rows': insertion_result['inserted_rows'],
+                'total_time': insertion_result['total_time'],
+                'rows_per_second': insertion_result['rows_per_second']
+            }
+        else:
+            logger.error(f"❌ Data insertion failed: {insertion_result.get('error', 'Unknown error')}")
+            raise HTTPException(
+                status_code=500,
+                detail=f'Data insertion failed: {insertion_result.get("error", "Unknown error")}'
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in data insertion: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f'Unexpected error: {str(e)}'
         ) 

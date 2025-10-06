@@ -236,12 +236,20 @@ class DatabaseConnectionService:
     def execute_query(self, connection_config: Dict[str, Any], query: str, limit: int = 1000) -> Dict[str, Any]:
         """Execute a query on the connected database"""
         try:
+            # Handle None limit parameter
+            if limit is None:
+                limit = 1000
+                
             connection_string = self._build_connection_string(connection_config)
             engine = create_engine(connection_string, echo=False)
             
             with engine.connect() as conn:
                 # Add limit to query if not present
                 if "LIMIT" not in query.upper():
+                    query = f"{query} LIMIT {limit}"
+                else:
+                    # If LIMIT already exists, remove it and add our own
+                    query = query.rsplit("LIMIT", 1)[0].strip()
                     query = f"{query} LIMIT {limit}"
                 
                 result = conn.execute(text(query))
