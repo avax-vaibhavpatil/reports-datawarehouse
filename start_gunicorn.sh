@@ -42,4 +42,5 @@ echo ""
 #new branch created -- joins
 #new branch created -- sql-connection 
 #new branch created -- schema-creation
+#new branch created -- insert-display
 gunicorn -c gunicorn.conf.py app.main:app 
