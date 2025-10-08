@@ -643,69 +643,147 @@ async def detect_database_schemas(
             detail=f"Internal server error: {str(e)}"
         )
 
+@router.get("/test-sse")
+async def test_sse():
+    """Test Server-Sent Events endpoint"""
+    async def generate_test_stream():
+        for i in range(5):
+            yield f"data: {json.dumps({'type': 'test', 'message': f'Test message {i}', 'progress': i * 20})}\n\n"
+            await asyncio.sleep(1)
+        yield f"data: {json.dumps({'type': 'complete', 'message': 'Test completed', 'progress': 100})}\n\n"
+    
+    return StreamingResponse(
+        generate_test_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
+    )
+
 @router.post("/insert-data-stream")
-async def insert_data_simple(
+async def insert_data_with_progress(
     request: DataInsertionRequest,
     chunked_service: ChunkedInsertionService = Depends(get_chunked_insertion_service),
     sql_service: SQLQueryService = Depends(get_sql_query_service)
 ):
     """
-    Insert data into existing table with simple success/error response.
+    Insert data into existing table with real-time progress tracking via Server-Sent Events.
     
     Args:
         request: Data insertion request
         
     Returns:
-        Simple JSON response with success/error status
+        Server-Sent Events stream with progress updates
     """
     
-    try:
-        logger.info(f"🚀 Starting data insertion: {request.db_schema}.{request.user_table_name}")
-        
-        # Step 1: Validate table exists
-        pipeline_service = DataPipelineService()
-        existence_check = pipeline_service.check_table_exists(request.db_schema, request.user_table_name)
-        
-        if not existence_check['exists']:
-            raise HTTPException(
-                status_code=400,
-                detail=f'Table {request.db_schema}.{request.user_table_name} does not exist. Please create table first.'
-            )
-        
-        # Step 2: Insert data (no progress callback)
-        insertion_result = chunked_service.insert_data_with_progress(
-            query_sql=request.query_sql,
-            schema=request.db_schema,
-            table_name=request.user_table_name,
-            limit=request.limit,
-            is_database_mode=request.is_database_mode,
-            connection_config=request.connection_config,
-            progress_callback=None  # No progress tracking
-        )
-        
-        if insertion_result.get('success'):
-            logger.info(f"✅ Data insertion completed: {insertion_result['inserted_rows']:,} rows")
-            return {
-                'success': True,
-                'message': f'Successfully inserted {insertion_result["inserted_rows"]:,} rows',
-                'table_name': request.user_table_name,
-                'schema': request.db_schema,
-                'inserted_rows': insertion_result['inserted_rows'],
-                'total_time': insertion_result['total_time'],
-                'rows_per_second': insertion_result['rows_per_second']
-            }
-        else:
-            logger.error(f"❌ Data insertion failed: {insertion_result.get('error', 'Unknown error')}")
-            raise HTTPException(
-                status_code=500,
-                detail=f'Data insertion failed: {insertion_result.get("error", "Unknown error")}'
-            )
+    async def generate_progress_stream():
+        try:
+            logger.info(f"🚀 Starting data insertion with progress: {request.db_schema}.{request.user_table_name}")
             
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Unexpected error in data insertion: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f'Unexpected error: {str(e)}'
-        ) 
+            # Step 1: Validate table exists
+            pipeline_service = DataPipelineService()
+            existence_check = pipeline_service.check_table_exists(request.db_schema, request.user_table_name)
+            
+            if not existence_check['exists']:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Table {request.db_schema}.{request.user_table_name} does not exist. Please create table first.', 'progress': 0})}\n\n"
+                return
+            
+            # Step 2: Send initial progress
+            logger.info("📤 Sending initial progress")
+            yield f"data: {json.dumps({'type': 'start', 'message': 'Starting data insertion...', 'progress': 0})}\n\n"
+            
+            # Step 3: Set up real-time progress tracking with a simpler approach
+            import asyncio
+            import threading
+            progress_updates = []
+            progress_lock = threading.Lock()
+            insertion_complete = threading.Event()
+            insertion_result = None
+            
+            def progress_callback(chunk_index: int, total_chunks: int, rows_inserted: int, total_rows: int, message: str):
+                """Progress callback that stores updates in a thread-safe list"""
+                percentage = int((rows_inserted / total_rows) * 100) if total_rows > 0 else 0
+                progress_data = {
+                    'type': 'progress',
+                    'chunk_index': chunk_index,
+                    'total_chunks': total_chunks,
+                    'rows_inserted': rows_inserted,
+                    'total_rows': total_rows,
+                    'percentage': percentage,
+                    'message': message,
+                    'progress': percentage
+                }
+                logger.info(f"📊 Progress callback: {progress_data}")
+                
+                # Store progress update in thread-safe list
+                with progress_lock:
+                    progress_updates.append(progress_data)
+            
+            # Step 4: Run data insertion in a background thread
+            def run_insertion():
+                """Run the synchronous data insertion in a thread"""
+                nonlocal insertion_result
+                try:
+                    logger.info("🔄 Starting data insertion in background thread...")
+                    insertion_result = chunked_service.insert_data_with_progress(
+                        request.query_sql,
+                        request.db_schema,
+                        request.user_table_name,
+                        request.limit,
+                        request.is_database_mode,
+                        request.connection_config,
+                        progress_callback
+                    )
+                    logger.info("✅ Data insertion completed in background thread")
+                except Exception as e:
+                    logger.error(f"❌ Error in insertion thread: {str(e)}")
+                    insertion_result = {'success': False, 'error': str(e)}
+                finally:
+                    insertion_complete.set()
+            
+            # Step 5: Start insertion thread
+            insertion_thread = threading.Thread(target=run_insertion)
+            insertion_thread.start()
+            
+            # Step 6: Stream progress updates in real-time while insertion is running
+            logger.info("📡 Starting real-time progress streaming...")
+            last_sent_index = 0
+            
+            while not insertion_complete.is_set():
+                # Check for new progress updates
+                with progress_lock:
+                    if len(progress_updates) > last_sent_index:
+                        # Send new progress updates
+                        for i in range(last_sent_index, len(progress_updates)):
+                            progress_data = progress_updates[i]
+                            logger.info(f"📤 Sending real-time progress update: {progress_data}")
+                            yield f"data: {json.dumps(progress_data)}\n\n"
+                        last_sent_index = len(progress_updates)
+                
+                # Wait a bit before checking again
+                await asyncio.sleep(0.1)
+            
+            # Step 7: Wait for insertion thread to complete
+            insertion_thread.join()
+            
+            # Step 8: Send completion message
+            if insertion_result.get('success'):
+                logger.info(f"✅ Data insertion completed: {insertion_result['inserted_rows']:,} rows")
+                yield f"data: {json.dumps({'type': 'complete', 'message': f'Successfully inserted {insertion_result["inserted_rows"]:,} rows', 'progress': 100, 'inserted_rows': insertion_result['inserted_rows'], 'total_time': insertion_result['total_time'], 'rows_per_second': insertion_result['rows_per_second']})}\n\n"
+            else:
+                logger.error(f"❌ Data insertion failed: {insertion_result.get('error', 'Unknown error')}")
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Data insertion failed: {insertion_result.get("error", "Unknown error")}', 'progress': 0})}\n\n"
+                
+        except Exception as e:
+            logger.error(f"❌ Unexpected error in data insertion: {str(e)}")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Unexpected error: {str(e)}', 'progress': 0})}\n\n"
+    
+    return StreamingResponse(
+        generate_progress_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
+        }
+    ) 

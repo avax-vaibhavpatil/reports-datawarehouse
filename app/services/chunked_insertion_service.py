@@ -570,6 +570,16 @@ class ChunkedInsertionService:
             # Calculate number of chunks
             num_chunks = (total_rows + chunk_size - 1) // chunk_size
             
+            # Send initial progress if callback provided
+            if progress_callback:
+                # Store progress data for the callback
+                self.progress_data = {
+                    'total_rows': total_rows,
+                    'num_chunks': num_chunks,
+                    'chunk_size': chunk_size
+                }
+                progress_callback(0, num_chunks, 0, total_rows, f"Starting insertion of {total_rows:,} rows in {num_chunks} chunks")
+            
             for chunk_index in range(num_chunks):
                 offset = chunk_index * chunk_size
                 chunk_limit = min(chunk_size, total_rows - offset)
@@ -634,8 +644,19 @@ class ChunkedInsertionService:
                     
                     inserted_rows += len(chunk_data)
                     
-                    # Log progress (simplified - no callback)
-                    self.logger.info(f"Inserted chunk {chunk_index + 1}: {len(chunk_data)} rows")
+                    # Log progress and send callback
+                    self.logger.info(f"Inserted chunk {chunk_index + 1}/{num_chunks}: {len(chunk_data)} rows (Total: {inserted_rows:,})")
+                    
+                    # Send progress update if callback provided
+                    if progress_callback:
+                        self.logger.info(f"📊 Calling progress callback: chunk {chunk_index + 1}/{num_chunks}, rows {inserted_rows}/{total_rows}")
+                        progress_callback(
+                            chunk_index + 1, 
+                            num_chunks, 
+                            inserted_rows, 
+                            total_rows, 
+                            f"Inserted chunk {chunk_index + 1}/{num_chunks}: {len(chunk_data)} rows"
+                        )
             
             # Calculate final statistics
             total_time = time.time() - start_time

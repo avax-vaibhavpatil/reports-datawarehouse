@@ -97,11 +97,20 @@ export class SchemaEditorDialogComponent implements OnInit {
   insertionMessage = '';
   createdTableInfo: any = null;
   
+  // Progress tracking variables
+  insertionStats = {
+    rowsInserted: 0,
+    totalRows: 0,
+    percentage: 0,
+    currentChunk: 0,
+    totalChunks: 0
+  };
+  
   // PostgreSQL data type options
   postgresDataTypes = [
     'TEXT', 
-    'VARCHAR(15)', 'VARCHAR(25)', 'VARCHAR(30)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)',
-    'CHAR(1)', 'CHAR(10)',
+    'VARCHAR(2)', 'VARCHAR(3)', 'VARCHAR(10)', 'VARCHAR(15)', 'VARCHAR(25)', 'VARCHAR(30)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)', 'VARCHAR(2000)',
+    'CHAR(1)', 'CHAR(2)', 'CHAR(3)', 'CHAR(10)',
     'INTEGER', 'BIGINT', 'SMALLINT', 
     'DECIMAL(10,2)', 'DECIMAL(13,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
     'NUMERIC(10,2)', 'NUMERIC(13,2)', 'NUMERIC(15,2)',
@@ -500,7 +509,15 @@ ${columnDefs},
     }
 
     this.isInsertingData = true;
-    this.insertionMessage = 'Inserting data...';
+    this.insertionMessage = 'Starting data insertion...';
+    this.insertionProgress = 0;
+    this.insertionStats = {
+      rowsInserted: 0,
+      totalRows: 0,
+      percentage: 0,
+      currentChunk: 0,
+      totalChunks: 0
+    };
 
     const requestData = {
       query_sql: this.data.sql,
@@ -511,11 +528,218 @@ ${columnDefs},
       connection_config: this.connectionConfig
     };
 
-    // Simple HTTP request without streaming
-    this.http.post('http://localhost:8000/api/schema-editor/insert-data-stream', requestData).subscribe({
-      next: (response: any) => {
+    // Use fetch API for Server-Sent Events with POST data
+    fetch('http://localhost:8000/api/schema-editor/insert-data-stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      },
+      body: JSON.stringify(requestData)
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('No response body reader available');
+      }
+      
+      let buffer = '';
+      
+      const readStream = () => {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            console.log('📡 Stream reading completed');
+            return;
+          }
+          
+          // Decode the chunk and add to buffer
+          buffer += decoder.decode(value, { stream: true });
+          console.log('📡 Received chunk, buffer length:', buffer.length);
+          
+          // Process complete lines from buffer
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          
+          for (const line of lines) {
+            if (line.trim() === '') continue; // Skip empty lines
+            
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonData = line.substring(6).trim();
+                if (jsonData) {
+                  console.log('📡 Parsing JSON:', jsonData);
+                  const data = JSON.parse(jsonData);
+                  this.handleProgressUpdate(data);
+                }
+              } catch (error) {
+                console.error('Error parsing progress data:', error, 'Line:', line);
+              }
+            }
+          }
+          
+          readStream();
+        }).catch(error => {
+          console.error('Error reading stream:', error);
+          this.isInsertingData = false;
+          this.insertionMessage = 'Data insertion failed';
+          this.snackBar.open(`❌ Error: ${error.message}`, 'Close', { duration: 5000 });
+        });
+      };
+      
+      readStream();
+    }).catch(error => {
+      console.error('Error during data insertion:', error);
+      this.handleInsertionError(error);
+    });
+  }
+
+  /**
+   * Test SSE connection (for debugging)
+   */
+  testSSEConnection(): void {
+    console.log('🧪 Testing SSE connection...');
+    
+    fetch('http://localhost:8000/api/schema-editor/test-sse', {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache'
+      }
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (!reader) {
+        throw new Error('No response body reader available');
+      }
+      
+      let buffer = '';
+      
+      const readStream = () => {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            console.log('🧪 SSE test completed');
+            return;
+          }
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonData = line.substring(6).trim();
+                if (jsonData) {
+                  console.log('🧪 SSE test data:', jsonData);
+                  const data = JSON.parse(jsonData);
+                  console.log('🧪 Parsed SSE data:', data);
+                }
+              } catch (error) {
+                console.error('🧪 Error parsing SSE test data:', error);
+              }
+            }
+          }
+          
+          readStream();
+        }).catch(error => {
+          console.error('🧪 SSE test error:', error);
+        });
+      };
+      
+      readStream();
+    }).catch(error => {
+      console.error('🧪 SSE connection test failed:', error);
+    });
+  }
+
+  /**
+   * Handle insertion errors with better user feedback
+   */
+  private handleInsertionError(error: any): void {
+    this.isInsertingData = false;
+    this.insertionMessage = 'Data insertion failed';
+    this.insertionProgress = 0;
+    
+    let errorMessage = 'Unknown error occurred';
+    
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      errorMessage = 'Connection failed. Please check if the server is running.';
+    } else if (error.message.includes('timeout')) {
+      errorMessage = 'Request timed out. The operation may still be running.';
+    } else if (error.message.includes('HTTP error')) {
+      errorMessage = `Server error: ${error.message}`;
+    } else {
+      errorMessage = error.message || error.toString();
+    }
+    
+    this.snackBar.open(`❌ Error: ${errorMessage}`, 'Close', { duration: 8000 });
+  }
+
+  /**
+   * Handle progress updates from Server-Sent Events
+   */
+  private handleProgressUpdate(data: any): void {
+    console.log('📊 Progress update received:', data);
+    
+    switch (data.type) {
+      case 'start':
+        console.log('🚀 Starting data insertion');
+        this.insertionMessage = data.message;
+        this.insertionProgress = 0;
+        this.insertionStats = {
+          rowsInserted: 0,
+          totalRows: data.total_rows || 0,
+          percentage: 0,
+          currentChunk: 0,
+          totalChunks: data.total_chunks || 0
+        };
+        break;
+        
+      case 'progress':
+        console.log(`📈 Progress: ${data.percentage}% (${data.rows_inserted}/${data.total_rows} rows)`);
+        this.insertionProgress = data.progress || data.percentage || 0;
+        this.insertionMessage = data.message || `Processing chunk ${data.chunk_index}/${data.total_chunks}`;
+        this.insertionStats = {
+          rowsInserted: data.rows_inserted || 0,
+          totalRows: data.total_rows || 0,
+          percentage: data.percentage || data.progress || 0,
+          currentChunk: data.chunk_index || 0,
+          totalChunks: data.total_chunks || 0
+        };
+        
+        // Force change detection for real-time updates
+        setTimeout(() => {
+          // Trigger change detection
+        }, 0);
+        break;
+        
+      case 'complete':
+        console.log('✅ Data insertion completed');
         this.isInsertingData = false;
-        this.insertionMessage = 'Data insertion completed successfully!';
+        this.insertionProgress = 100;
+        this.insertionMessage = data.message || 'Data insertion completed successfully!';
+        
+        // Update final stats
+        this.insertionStats = {
+          rowsInserted: data.inserted_rows || this.insertionStats.rowsInserted,
+          totalRows: data.inserted_rows || this.insertionStats.totalRows,
+          percentage: 100,
+          currentChunk: this.insertionStats.totalChunks,
+          totalChunks: this.insertionStats.totalChunks
+        };
         
         this.snackBar.open(
           `✅ Success! Data inserted successfully into table '${this.schemaForm.get('tableName')?.value}'`, 
@@ -528,16 +752,27 @@ ${columnDefs},
           success: true,
           tableName: this.schemaForm.get('tableName')?.value,
           schema: this.schemaForm.get('schema')?.value || 'processed_data',
-          message: 'Data insertion completed successfully!'
+          message: 'Data insertion completed successfully!',
+          insertionStats: {
+            insertedRows: data.inserted_rows,
+            totalTime: data.total_time,
+            rowsPerSecond: data.rows_per_second
+          }
         });
-      },
-      error: (error) => {
-        console.error('Error during data insertion:', error);
+        break;
+        
+      case 'error':
+        console.log('❌ Data insertion error:', data.message);
         this.isInsertingData = false;
         this.insertionMessage = 'Data insertion failed';
-        this.snackBar.open(`❌ Error: ${error.error?.message || error.message}`, 'Close', { duration: 5000 });
-      }
-    });
+        this.insertionProgress = 0;
+        this.snackBar.open(`❌ Error: ${data.message}`, 'Close', { duration: 5000 });
+        break;
+        
+      default:
+        console.log('❓ Unknown progress update type:', data.type);
+        break;
+    }
   }
 
   /**

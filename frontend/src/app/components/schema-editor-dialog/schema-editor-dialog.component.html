@@ -185,8 +185,29 @@
               <span class="progress-text">{{ insertionProgress }}%</span>
             </div>
             
+            <div class="progress-stats" *ngIf="insertionStats.totalRows > 0">
+              <div class="stat-row">
+                <span class="stat-label">Rows Inserted:</span>
+                <span class="stat-value">{{ insertionStats.rowsInserted | number }} / {{ insertionStats.totalRows | number }}</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Chunk Progress:</span>
+                <span class="stat-value">{{ insertionStats.currentChunk }} / {{ insertionStats.totalChunks }}</span>
+              </div>
+              <div class="stat-row" *ngIf="insertionStats.totalRows > 0">
+                <span class="stat-label">Remaining:</span>
+                <span class="stat-value">{{ (insertionStats.totalRows - insertionStats.rowsInserted) | number }} rows</span>
+              </div>
+            </div>
+            
             <div class="progress-message">
               <p>{{ insertionMessage }}</p>
+            </div>
+            
+            <!-- Real-time status indicator -->
+            <div class="status-indicator">
+              <mat-icon class="pulse-icon">sync</mat-icon>
+              <span>Live Progress Updates</span>
             </div>
           </div>
         </mat-card-content>
