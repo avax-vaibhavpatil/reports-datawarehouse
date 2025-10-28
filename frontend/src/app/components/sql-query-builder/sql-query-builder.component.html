@@ -1,198 +1,232 @@
 <div class="sql-query-builder">
-  <div class="header">
-    <h2>SQL Query Builder</h2>
-    <p>Build complex SQL queries with multiple JOIN types and conditions</p>
+  <!-- Header with Progress -->
+  <div class="wizard-header">
+    <h2>SQL Query Builder Wizard</h2>
+    <p>Build, execute, and save your SQL queries step by step</p>
+    
+    <!-- Progress Bar -->
+    <div class="progress-container">
+      <mat-progress-bar 
+        mode="determinate" 
+        [value]="getStepProgress()" 
+        class="progress-bar">
+      </mat-progress-bar>
+      <span class="progress-text">{{ currentStep + 1 }} of {{ totalSteps }} steps</span>
+    </div>
   </div>
 
-  <form [formGroup]="queryForm" (ngSubmit)="generateSQL()">
-    <!-- Tables Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>Tables</mat-card-title>
-        <mat-card-subtitle>Select tables and columns for your query</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div formArrayName="tables">
-          <div *ngFor="let table of tablesArray.controls; let i = index" [formGroupName]="i" class="table-config">
-            <div class="table-row">
-              <mat-form-field appearance="outline" class="table-field">
-                <mat-label>Table</mat-label>
-                <mat-select formControlName="name" (selectionChange)="onTableChange(i)">
-                  <mat-option *ngFor="let table of availableTables" [value]="table.name">
-                    {{ table.name }} ({{ table.row_count }} rows)
-                  </mat-option>
-                </mat-select>
-              </mat-form-field>
+  <!-- Horizontal Stepper -->
+  <div class="stepper-container">
+    <div class="stepper">
+      <div 
+        *ngFor="let step of stepLabels; let i = index" 
+        class="step"
+        [class.active]="i === currentStep"
+        [class.completed]="stepCompleted[i]"
+        [class.accessible]="isStepAccessible(i)"
+        (click)="goToStep(i)">
+        
+        <div class="step-circle">
+          <mat-icon *ngIf="stepCompleted[i]">check</mat-icon>
+          <span *ngIf="!stepCompleted[i]">{{ i + 1 }}</span>
+        </div>
+        
+        <div class="step-content">
+          <div class="step-title">{{ step }}</div>
+          <div class="step-description">
+            <span *ngIf="i === 0">Select tables and define relationships</span>
+            <span *ngIf="i === 1">Review and edit generated SQL</span>
+            <span *ngIf="i === 2">Execute query and preview results</span>
+            <span *ngIf="i === 3">Define schema and save to warehouse</span>
+          </div>
+        </div>
+        
+        <div class="step-connector" *ngIf="i < totalSteps - 1"></div>
+      </div>
+    </div>
+  </div>
 
-              <mat-form-field appearance="outline" class="alias-field">
-                <mat-label>Alias</mat-label>
-                <input matInput formControlName="alias" placeholder="e.g., l">
-              </mat-form-field>
+  <!-- Step Content -->
+  <div class="step-content-container">
+    
+    <!-- Step 1: Build Query -->
+    <div *ngIf="currentStep === 0" class="step-panel">
+      <div class="step-header">
+        <h3>
+          <mat-icon>build</mat-icon>
+          Build Query
+        </h3>
+        <p>Select tables, columns, and define relationships for your query</p>
+      </div>
 
-              <button type="button" mat-icon-button color="warn" (click)="removeTable(i)">
-                <mat-icon>delete</mat-icon>
-              </button>
-            </div>
-
-            <!-- Select All Header -->
-            <div class="select-all-header">
-              <mat-checkbox 
-                [formControlName]="'selectAll'"
-                (change)="toggleSelectAllColumns(i)"
-                class="select-all-checkbox">
-                <strong>Select All Columns</strong>
-              </mat-checkbox>
-            </div>
-
-            <!-- Individual Columns -->
-            <div formArrayName="columns" class="columns-section">
-              <div *ngFor="let column of getTableColumnsArray(i).controls; let j = index" class="column-item">
-                <mat-checkbox 
-                  [formControlName]="j"
-                  (change)="onIndividualColumnChange(i)">
-                  {{ getTableColumns(i)[j] }}
-                </mat-checkbox>
-              </div>
-            </div>
-
-            <!-- Custom Expressions (CASE statements, etc.) -->
-            <div class="custom-expressions-section">
-              <div class="custom-expressions-header">
-                <h4>Custom Expressions (CASE statements, calculations, etc.)</h4>
-                <button type="button" mat-stroked-button (click)="addCustomExpression(i)">
-                  <mat-icon>add</mat-icon>
-                  Add Custom Expression
-                </button>
-              </div>
-              
-              <div formArrayName="custom_expressions" class="expressions-list">
-                <div *ngFor="let expression of getCustomExpressionsArray(i).controls; let j = index" class="expression-item">
-                  <mat-form-field appearance="outline" class="expression-field">
-                    <mat-label>Custom Expression</mat-label>
-                    <textarea 
-                      matInput 
-                      [formControlName]="j"
-                      placeholder="e.g., (CASE WHEN ins_isscol_flg='C' THEN ins_amount ELSE 0 END) AS receipt"
-                      rows="2">
-                    </textarea>
+      <form [formGroup]="queryForm">
+        <!-- Tables Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Tables & Columns</mat-card-title>
+            <mat-card-subtitle>Select tables and columns for your query</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="tables">
+              <div *ngFor="let table of tablesArray.controls; let i = index" [formGroupName]="i" class="table-config">
+                <div class="table-row">
+                  <mat-form-field appearance="outline" class="table-field">
+                    <mat-label>Table</mat-label>
+                    <mat-select formControlName="name" (selectionChange)="onTableChange(i)">
+                      <mat-option *ngFor="let table of availableTables" [value]="table.name">
+                        {{ table.name }} ({{ table.row_count }} rows)
+                      </mat-option>
+                    </mat-select>
                   </mat-form-field>
-                  <button type="button" mat-icon-button color="warn" (click)="removeCustomExpression(i, j)">
+
+                  <mat-form-field appearance="outline" class="alias-field">
+                    <mat-label>Alias</mat-label>
+                    <input matInput formControlName="alias" placeholder="e.g., t1">
+                  </mat-form-field>
+
+                  <button type="button" mat-icon-button color="warn" (click)="removeTable(i)">
                     <mat-icon>delete</mat-icon>
                   </button>
                 </div>
+
+                <!-- Column Selection -->
+                <div *ngIf="getTableColumns(i).length > 0" class="columns-section">
+                  <div class="select-all-header">
+                    <mat-checkbox 
+                      [formControlName]="'selectAll'"
+                      (change)="toggleSelectAllColumns(i)"
+                      class="select-all-checkbox">
+                      <strong>Select All Columns</strong>
+                    </mat-checkbox>
+                  </div>
+
+                  <div formArrayName="columns" class="columns-grid">
+                    <div *ngFor="let column of getTableColumnsArray(i).controls; let j = index" class="column-item">
+                      <mat-checkbox 
+                        [formControlName]="j"
+                        (change)="onIndividualColumnChange(i)">
+                        {{ getTableColumns(i)[j] }}
+                      </mat-checkbox>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div class="table-actions">
-          <button type="button" mat-raised-button color="primary" (click)="addTable()">
-            <mat-icon>add</mat-icon>
-            Add Table
-          </button>
-          
-          <button type="button" mat-raised-button color="warn" (click)="clearAllTables()" 
-                  [disabled]="tablesArray.length === 0">
-            <mat-icon>clear_all</mat-icon>
-            Clear All Tables
-          </button>
-        </div>
-      </mat-card-content>
-    </mat-card>
-
-    <!-- JOINs Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>JOINs</mat-card-title>
-        <mat-card-subtitle>Define relationships between tables</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div formArrayName="joins">
-          <div *ngFor="let join of joinsArray.controls; let i = index" [formGroupName]="i" class="join-config">
-            <div class="join-header">
-              <mat-form-field appearance="outline" class="join-type-field">
-                <mat-label>JOIN Type</mat-label>
-                <mat-select formControlName="type">
-                  <mat-option *ngFor="let joinType of joinTypes" [value]="joinType.type">
-                    {{ joinType.type }}
-                  </mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" class="join-table-field">
-                <mat-label>Table</mat-label>
-                <mat-select formControlName="table" (selectionChange)="onJoinTableChange(i); onTableSelectionChange(i)">
-                  <mat-option *ngFor="let table of availableTables" [value]="table.name">
-                    {{ table.name }} ({{ table.row_count }} rows)
-                  </mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline" class="join-alias-field">
-                <mat-label>Alias</mat-label>
-                <input matInput formControlName="alias" placeholder="e.g., ld">
-              </mat-form-field>
-
-              <button type="button" mat-icon-button color="warn" (click)="removeJoin(i)">
-                <mat-icon>delete</mat-icon>
+            <div class="table-actions">
+              <button type="button" mat-raised-button color="primary" (click)="addTable()">
+                <mat-icon>add</mat-icon>
+                Add Table
               </button>
             </div>
+          </mat-card-content>
+        </mat-card>
 
-            <!-- Table Selection for Auto-Suggestion -->
-            <div class="table-selection-section">
-              <h4>Select Tables for Auto-Suggestion</h4>
-              <div class="table-selection-row">
-                <mat-form-field appearance="outline" class="table-selection-field">
-                  <mat-label>Left Table</mat-label>
-                  <mat-select formControlName="left_table" (selectionChange)="onTableSelectionChange(i)">
-                    <mat-option *ngFor="let table of availableTables" [value]="table.name">
-                      {{ table.name }} ({{ table.row_count }} rows)
-                    </mat-option>
-                  </mat-select>
-                </mat-form-field>
-                
-                <mat-form-field appearance="outline" class="table-selection-field">
-                  <mat-label>Right Table</mat-label>
-                  <mat-select formControlName="right_table" (selectionChange)="onTableSelectionChange(i)">
-                    <mat-option *ngFor="let table of availableTables" [value]="table.name">
-                      {{ table.name }} ({{ table.row_count }} rows)
-                    </mat-option>
-                  </mat-select>
-                </mat-form-field>
+        <!-- JOINs Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Table Relationships</mat-card-title>
+            <mat-card-subtitle>Define JOINs between tables</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="joins">
+              <div *ngFor="let join of joinsArray.controls; let i = index" [formGroupName]="i" class="join-config">
+                <div class="join-header">
+                  <mat-form-field appearance="outline" class="join-type-field">
+                    <mat-label>JOIN Type</mat-label>
+                    <mat-select formControlName="type">
+                      <mat-option *ngFor="let joinType of joinTypes" [value]="joinType.type">
+                        {{ joinType.type }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" class="join-table-field">
+                    <mat-label>Table</mat-label>
+                    <mat-select formControlName="table" (selectionChange)="onJoinTableChange(i)">
+                      <mat-option *ngFor="let table of availableTables" [value]="table.name">
+                        {{ table.name }}
+                      </mat-option>
+                    </mat-select>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" class="join-alias-field">
+                    <mat-label>Alias</mat-label>
+                    <input matInput formControlName="alias" placeholder="e.g., t2">
+                  </mat-form-field>
+
+                  <button type="button" mat-icon-button color="warn" (click)="removeJoin(i)">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+
+                <!-- JOIN Conditions -->
+                <div formArrayName="conditions" class="join-conditions">
+                  <div *ngFor="let condition of getJoinConditionsArray(i).controls; let j = index" [formGroupName]="j" class="condition-row">
+                    <mat-form-field appearance="outline" class="condition-field">
+                      <mat-label>Left Table.Column</mat-label>
+                      <input matInput formControlName="left_column" placeholder="e.g., t1.id">
+                    </mat-form-field>
+
+                    <mat-form-field appearance="outline" class="operator-field">
+                      <mat-label>Operator</mat-label>
+                      <mat-select formControlName="operator">
+                        <mat-option value="=">=</mat-option>
+                        <mat-option value="!=">!=</mat-option>
+                        <mat-option value="<"><</mat-option>
+                        <mat-option value=">">></mat-option>
+                      </mat-select>
+                    </mat-form-field>
+
+                    <mat-form-field appearance="outline" class="condition-field">
+                      <mat-label>Right Table.Column</mat-label>
+                      <input matInput formControlName="right_column" placeholder="e.g., t2.id">
+                    </mat-form-field>
+
+                    <button type="button" mat-icon-button color="warn" (click)="removeJoinCondition(i, j)">
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  </div>
+
+                  <div class="join-actions">
+                    <button type="button" mat-stroked-button (click)="addJoinCondition(i)">
+                      <mat-icon>add</mat-icon>
+                      Add Condition
+                    </button>
+                    
+                    <button type="button" mat-raised-button color="accent" (click)="suggestColumnRelationships(i)">
+                      <mat-icon>auto_fix_high</mat-icon>
+                      Auto-Detect Relations
+                    </button>
+                    
+                    <button type="button" mat-stroked-button color="warn" (click)="clearSuggestedRelationships(i)">
+                      <mat-icon>clear</mat-icon>
+                      Clear All
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <!-- Auto-Suggestion Controls -->
-            <div class="auto-suggestion-controls" *ngIf="join.get('left_table')?.value && join.get('right_table')?.value">
-              <div class="suggestion-buttons">
-                <button type="button" mat-stroked-button color="primary" (click)="suggestColumnRelationships(i)" [disabled]="isLoading">
-                  <mat-icon>auto_fix_high</mat-icon>
-                  {{ isLoading ? 'Suggesting...' : 'Auto-Suggest Relationships' }}
-                </button>
-                <button type="button" mat-stroked-button color="warn" (click)="clearSuggestedRelationships(i)">
-                  <mat-icon>clear_all</mat-icon>
-                  Clear All
-                </button>
-              </div>
-              <div class="suggestion-info" *ngIf="getJoinConditionsArray(i).length > 0">
-                <small class="text-muted">
-                  <mat-icon>info</mat-icon>
-                  {{ getJoinConditionsArray(i).length }} relationship(s) defined
-                </small>
-              </div>
-            </div>
+            <button type="button" mat-raised-button color="primary" (click)="addJoin()">
+              <mat-icon>add</mat-icon>
+              Add JOIN
+            </button>
+          </mat-card-content>
+        </mat-card>
 
-            <!-- JOIN Conditions -->
-            <div formArrayName="conditions" class="join-conditions">
-              <div *ngFor="let condition of getJoinConditionsArray(i).controls; let j = index" [formGroupName]="j" class="condition-row">
-                <mat-form-field appearance="outline" class="condition-field">
-                  <mat-label>Left Table</mat-label>
-                  <input matInput formControlName="left_table" placeholder="e.g., l">
-                </mat-form-field>
-
-                <mat-form-field appearance="outline" class="condition-field">
-                  <mat-label>Left Column</mat-label>
-                  <input matInput formControlName="left_column" placeholder="e.g., lg_voucher_no">
+        <!-- WHERE Conditions -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Filter Conditions</mat-card-title>
+            <mat-card-subtitle>Add WHERE conditions to filter results</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="where_conditions">
+              <div *ngFor="let where of whereConditionsArray.controls; let i = index" [formGroupName]="i" class="where-row">
+                <mat-form-field appearance="outline" class="where-field">
+                  <mat-label>Column</mat-label>
+                  <input matInput formControlName="left_side" placeholder="e.g., t1.status">
                 </mat-form-field>
 
                 <mat-form-field appearance="outline" class="operator-field">
@@ -200,267 +234,415 @@
                   <mat-select formControlName="operator">
                     <mat-option value="=">=</mat-option>
                     <mat-option value="!=">!=</mat-option>
-                    <mat-option value="<"><</mat-option>
-                    <mat-option value=">">></mat-option>
-                    <mat-option value="<="><=</mat-option>
-                    <mat-option value=">=">>=</mat-option>
+                    <mat-option value="LIKE">LIKE</mat-option>
+                    <mat-option value="IN">IN</mat-option>
                   </mat-select>
                 </mat-form-field>
 
-                <mat-form-field appearance="outline" class="condition-field">
-                  <mat-label>Right Table</mat-label>
-                  <input matInput formControlName="right_table" placeholder="e.g., ld">
+                <mat-form-field appearance="outline" class="where-field">
+                  <mat-label>Value</mat-label>
+                  <input matInput formControlName="right_side" placeholder="e.g., 'active'">
                 </mat-form-field>
 
-                <mat-form-field appearance="outline" class="condition-field">
-                  <mat-label>Right Column</mat-label>
-                  <input matInput formControlName="right_column" placeholder="e.g., lgd_voucher_no">
+                <mat-form-field appearance="outline" class="logical-field" *ngIf="i > 0">
+                  <mat-label>Logic</mat-label>
+                  <mat-select formControlName="logical_operator">
+                    <mat-option value="AND">AND</mat-option>
+                    <mat-option value="OR">OR</mat-option>
+                  </mat-select>
                 </mat-form-field>
 
-                <button type="button" mat-icon-button color="warn" (click)="removeJoinCondition(i, j)">
+                <button type="button" mat-icon-button color="warn" (click)="removeWhereCondition(i)">
                   <mat-icon>delete</mat-icon>
                 </button>
               </div>
+            </div>
 
-              <button type="button" mat-stroked-button (click)="addJoinCondition(i)">
-                <mat-icon>add</mat-icon>
-                Add Condition
+            <button type="button" mat-raised-button color="primary" (click)="addWhereCondition()">
+              <mat-icon>add</mat-icon>
+              Add WHERE Condition
+            </button>
+          </mat-card-content>
+        </mat-card>
+
+        <!-- GROUP BY Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Group Results</mat-card-title>
+            <mat-card-subtitle>Group results by columns</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="group_by">
+              <div *ngFor="let groupBy of groupByArray.controls; let i = index" [formGroupName]="i" class="group-by-row">
+                <mat-form-field appearance="outline" class="group-by-field">
+                  <mat-label>Column</mat-label>
+                  <input matInput formControlName="column" placeholder="e.g., t1.category">
+                </mat-form-field>
+
+                <button type="button" mat-icon-button color="warn" (click)="removeGroupBy(i)">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" mat-raised-button color="primary" (click)="addGroupBy()">
+              <mat-icon>add</mat-icon>
+              Add GROUP BY
+            </button>
+          </mat-card-content>
+        </mat-card>
+
+        <!-- ORDER BY Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Sort Results</mat-card-title>
+            <mat-card-subtitle>Sort results by columns</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="order_by">
+              <div *ngFor="let orderBy of orderByArray.controls; let i = index" [formGroupName]="i" class="order-by-row">
+                <mat-form-field appearance="outline" class="order-by-field">
+                  <mat-label>Column</mat-label>
+                  <input matInput formControlName="column" placeholder="e.g., t1.name">
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="direction-field">
+                  <mat-label>Direction</mat-label>
+                  <mat-select formControlName="direction">
+                    <mat-option value="ASC">ASC</mat-option>
+                    <mat-option value="DESC">DESC</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <button type="button" mat-icon-button color="warn" (click)="removeOrderBy(i)">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" mat-raised-button color="primary" (click)="addOrderBy()">
+              <mat-icon>add</mat-icon>
+              Add ORDER BY
+            </button>
+          </mat-card-content>
+        </mat-card>
+
+        <!-- LIMIT Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Limit Results</mat-card-title>
+            <mat-card-subtitle>Limit number of results</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <mat-form-field appearance="outline" class="limit-field">
+              <mat-label>Limit</mat-label>
+              <input matInput formControlName="limit" type="number" placeholder="e.g., 100">
+              <mat-hint>Maximum number of rows to return</mat-hint>
+            </mat-form-field>
+          </mat-card-content>
+        </mat-card>
+      </form>
+    </div>
+
+    <!-- Step 2: Review Query -->
+    <div *ngIf="currentStep === 1" class="step-panel">
+      <div class="step-header">
+        <h3>
+          <mat-icon>code</mat-icon>
+          Review Generated Query
+        </h3>
+        <p>Review the generated SQL query and make any necessary edits</p>
+      </div>
+
+      <mat-card class="sql-review-card">
+        <mat-card-header>
+          <mat-card-title>Generated SQL Query</mat-card-title>
+          <mat-card-subtitle *ngIf="queryResponse">
+            {{ queryResponse.table_count }} table(s), {{ queryResponse.join_count }} JOIN(s)
+          </mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="sql-container">
+            <pre class="sql-code">{{ formattedSQL || generatedSQL }}</pre>
+          </div>
+          
+          <div class="sql-actions">
+            <button mat-raised-button color="primary" (click)="generateSQL()" [disabled]="isLoading">
+              <mat-icon *ngIf="isLoading">hourglass_empty</mat-icon>
+              <mat-icon *ngIf="!isLoading">refresh</mat-icon>
+              {{ isLoading ? 'Generating...' : 'Regenerate SQL' }}
+            </button>
+            
+            <button mat-stroked-button (click)="copyToClipboard(generatedSQL)" [disabled]="!generatedSQL">
+              <mat-icon>content_copy</mat-icon>
+              Copy SQL
+            </button>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <!-- Step 3: Preview Data -->
+    <div *ngIf="currentStep === 2" class="step-panel">
+      <div class="step-header">
+        <h3>
+          <mat-icon>preview</mat-icon>
+          Execute & Preview Data
+        </h3>
+        <p>Execute your query and preview the results</p>
+      </div>
+
+      <mat-card class="preview-card">
+        <mat-card-header>
+          <mat-card-title>Query Execution</mat-card-title>
+          <mat-card-subtitle>Execute your SQL query and view the results</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="execution-controls">
+            <button mat-raised-button color="primary" (click)="executeQuery()" [disabled]="isExecuting || !generatedSQL">
+              <mat-icon *ngIf="isExecuting">hourglass_empty</mat-icon>
+              <mat-icon *ngIf="!isExecuting">play_arrow</mat-icon>
+              {{ isExecuting ? 'Executing...' : 'Execute Query' }}
+            </button>
+          </div>
+
+          <!-- Results Display -->
+          <div *ngIf="queryResults.length > 0" class="results-section">
+            <div class="results-header">
+              <h4>Query Results</h4>
+              <div class="results-info">
+                <span class="row-count">{{ queryResults.length | number }} records</span>
+                <span class="execution-time" *ngIf="executionTime">{{ executionTime }}</span>
+              </div>
+            </div>
+            
+            <div class="results-actions">
+              <button mat-stroked-button (click)="exportToCSV()">
+                <mat-icon>download</mat-icon>
+                Export to CSV
               </button>
             </div>
+
+            <div class="results-table-container">
+              <table class="results-table">
+                <thead>
+                  <tr>
+                    <th *ngFor="let column of queryColumns">{{ column }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of queryResults">
+                    <td *ngFor="let column of queryColumns">{{ row[column] }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        <button type="button" mat-raised-button color="primary" (click)="addJoin()">
-          <mat-icon>add</mat-icon>
-          Add JOIN
-        </button>
-      </mat-card-content>
-    </mat-card>
+          <!-- No Results Message -->
+          <div *ngIf="queryResults.length === 0 && !isExecuting" class="no-results-section">
+            <mat-icon>info</mat-icon>
+            <h4>No Results Yet</h4>
+            <p>Click "Execute Query" to run your SQL and see the results here.</p>
+          </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
 
-    <!-- WHERE Conditions Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>WHERE Conditions</mat-card-title>
-        <mat-card-subtitle>Add filtering conditions</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div formArrayName="where_conditions">
-          <div *ngFor="let where of whereConditionsArray.controls; let i = index" [formGroupName]="i" class="where-row">
-            <mat-form-field appearance="outline" class="where-field">
-              <mat-label>Left Side</mat-label>
-              <input matInput formControlName="left_side" placeholder="e.g., l.lg_voucher_no">
-            </mat-form-field>
+    <!-- Step 4: Save to Warehouse -->
+    <div *ngIf="currentStep === 3" class="step-panel">
+      <div class="step-header">
+        <h3>
+          <mat-icon>storage</mat-icon>
+          Save to Data Warehouse
+        </h3>
+        <p>Create table schema and insert your query results into the data warehouse</p>
+      </div>
 
-            <mat-form-field appearance="outline" class="operator-field">
-              <mat-label>Operator</mat-label>
-              <mat-select formControlName="operator">
-                <mat-option value="=">=</mat-option>
-                <mat-option value="!=">!=</mat-option>
-                <mat-option value="<"><</mat-option>
-                <mat-option value=">">></mat-option>
-                <mat-option value="<="><=</mat-option>
-                <mat-option value=">=">>=</mat-option>
-                <mat-option value="LIKE">LIKE</mat-option>
-                <mat-option value="IN">IN</mat-option>
-              </mat-select>
-            </mat-form-field>
+      <!-- Data Summary -->
+      <mat-card class="warehouse-card" *ngIf="queryResults.length > 0">
+        <mat-card-header>
+          <mat-card-title>Query Results Summary</mat-card-title>
+          <mat-card-subtitle>Overview of data to be saved</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <mat-icon>table_chart</mat-icon>
+              <span class="summary-label">Records:</span>
+              <span class="summary-value">{{ queryResults.length | number }}</span>
+            </div>
+            <div class="summary-item">
+              <mat-icon>view_column</mat-icon>
+              <span class="summary-label">Columns:</span>
+              <span class="summary-value">{{ queryColumns.length }}</span>
+            </div>
+            <div class="summary-item">
+              <mat-icon>schedule</mat-icon>
+              <span class="summary-label">Execution Time:</span>
+              <span class="summary-value">{{ executionTime || 'N/A' }}</span>
+            </div>
+          </div>
+        </mat-card-content>
+      </mat-card>
 
-            <mat-form-field appearance="outline" class="where-field">
-              <mat-label>Right Side</mat-label>
-              <input matInput formControlName="right_side" placeholder="e.g., '2024-01-01'">
-            </mat-form-field>
+      <!-- Step 1: Table Configuration -->
+      <mat-card class="warehouse-card">
+        <mat-card-header>
+          <mat-card-title>Step 1: Table Configuration</mat-card-title>
+          <mat-card-subtitle>Define database schema and table name</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <form [formGroup]="schemaForm">
+            <div class="schema-form">
+              <mat-form-field appearance="outline" class="schema-field">
+                <mat-label>Database Schema</mat-label>
+                <mat-select formControlName="schema">
+                  <mat-option value="processed_data">processed_data</mat-option>
+                  <mat-option value="analytics">analytics</mat-option>
+                  <mat-option value="warehouse">warehouse</mat-option>
+                </mat-select>
+                <mat-hint>Select the database schema where the table will be created</mat-hint>
+              </mat-form-field>
 
-            <mat-form-field appearance="outline" class="logical-field" *ngIf="i > 0">
-              <mat-label>Logic</mat-label>
-              <mat-select formControlName="logical_operator">
-                <mat-option value="AND">AND</mat-option>
-                <mat-option value="OR">OR</mat-option>
-              </mat-select>
-            </mat-form-field>
+              <mat-form-field appearance="outline" class="schema-field">
+                <mat-label>Table Name</mat-label>
+                <input matInput formControlName="tableName" placeholder="e.g., customer_summary" (input)="onTableNameChange()">
+                <mat-hint>Use lowercase letters, numbers, and underscores only</mat-hint>
+                <mat-error *ngIf="schemaForm.get('tableName')?.hasError('required')">Table name is required</mat-error>
+              </mat-form-field>
+            </div>
 
-            <button type="button" mat-icon-button color="warn" (click)="removeWhereCondition(i)">
-              <mat-icon>delete</mat-icon>
+            <!-- Schema Preview -->
+            <div *ngIf="schemaPreview && !isSchemaLoading" class="schema-preview">
+              <h4>Schema Preview</h4>
+              <div class="preview-info">
+                <div class="preview-item">
+                  <mat-icon>check_circle</mat-icon>
+                  <span>Table: {{ schemaPreview.table_name }}</span>
+                </div>
+                <div class="preview-item">
+                  <mat-icon>info</mat-icon>
+                  <span>Columns: {{ schemaPreview.columns?.length || 0 }}</span>
+                </div>
+                <div class="preview-item" *ngIf="schemaPreview.name_validation">
+                  <mat-icon [color]="schemaPreview.name_validation.is_valid ? 'primary' : 'warn'">
+                    {{ schemaPreview.name_validation.is_valid ? 'check_circle' : 'error' }}
+                  </mat-icon>
+                  <span>{{ schemaPreview.name_validation.is_valid ? 'Valid table name' : 'Invalid table name' }}</span>
+                </div>
+              </div>
+
+              <!-- Column Details -->
+              <div *ngIf="schemaPreview.columns" class="columns-preview">
+                <h5>Column Details:</h5>
+                <div class="columns-list">
+                  <div *ngFor="let col of schemaPreview.columns" class="column-item">
+                    <span class="column-name">{{ col.clean_name }}</span>
+                    <span class="column-type">{{ col.suggested_pg_type }}</span>
+                    <span class="column-nullable" *ngIf="col.is_nullable">NULL</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Loading State -->
+            <div *ngIf="isSchemaLoading" class="loading-state">
+              <mat-spinner diameter="30"></mat-spinner>
+              <span>Generating schema preview...</span>
+            </div>
+
+            <!-- Create Table Button -->
+            <div class="table-actions">
+              <button mat-raised-button color="primary" (click)="createTableOnly()" 
+                      [disabled]="!canCreateTable() || isCreatingTable">
+                <mat-icon *ngIf="isCreatingTable">hourglass_empty</mat-icon>
+                <mat-icon *ngIf="!isCreatingTable">create</mat-icon>
+                {{ isCreatingTable ? 'Creating Table...' : 'Create Table' }}
+              </button>
+            </div>
+          </form>
+        </mat-card-content>
+      </mat-card>
+
+      <!-- Step 2: Data Insertion -->
+      <mat-card class="warehouse-card" *ngIf="tableCreated">
+        <mat-card-header>
+          <mat-card-title>Step 2: Insert Data</mat-card-title>
+          <mat-card-subtitle>Insert query results into the created table</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div class="insertion-info">
+            <div class="success-info">
+              <mat-icon color="primary">check_circle</mat-icon>
+              <span>Table "{{ schemaForm.get('tableName')?.value }}" created successfully!</span>
+            </div>
+          </div>
+
+          <!-- Insertion Progress -->
+          <div *ngIf="isInsertingData" class="insertion-progress">
+            <div class="progress-header">
+              <h4>{{ insertionMessage }}</h4>
+              <span>{{ insertionProgress }}%</span>
+            </div>
+            <mat-progress-bar mode="determinate" [value]="insertionProgress"></mat-progress-bar>
+            <div *ngIf="insertionStats" class="progress-stats">
+              <div class="stat-item">
+                <span>Rows Inserted:</span>
+                <span>{{ insertionStats.rowsInserted | number }}</span>
+              </div>
+              <div class="stat-item">
+                <span>Total Rows:</span>
+                <span>{{ insertionStats.totalRows | number }}</span>
+              </div>
+              <div class="stat-item">
+                <span>Current Chunk:</span>
+                <span>{{ insertionStats.currentChunk }}/{{ insertionStats.totalChunks }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Insert Data Button -->
+          <div class="insertion-actions">
+            <button mat-raised-button color="accent" (click)="insertData()" 
+                    [disabled]="isInsertingData">
+              <mat-icon>cloud_upload</mat-icon>
+              Insert Data
             </button>
           </div>
-        </div>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  </div>
 
-        <button type="button" mat-raised-button color="primary" (click)="addWhereCondition()">
-          <mat-icon>add</mat-icon>
-          Add WHERE Condition
-        </button>
-      </mat-card-content>
-    </mat-card>
-
-    <!-- GROUP BY Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>GROUP BY</mat-card-title>
-        <mat-card-subtitle>Group results by columns</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div formArrayName="group_by">
-          <div *ngFor="let groupBy of groupByArray.controls; let i = index" [formGroupName]="i" class="group-by-row">
-            <mat-form-field appearance="outline" class="group-by-field">
-              <mat-label>Column</mat-label>
-              <input matInput formControlName="column" placeholder="e.g., l.lg_voucher_no">
-            </mat-form-field>
-
-            <button type="button" mat-icon-button color="warn" (click)="removeGroupBy(i)">
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </div>
-
-        <button type="button" mat-raised-button color="primary" (click)="addGroupBy()">
-          <mat-icon>add</mat-icon>
-          Add GROUP BY
-        </button>
-      </mat-card-content>
-    </mat-card>
-
-    <!-- ORDER BY Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>ORDER BY</mat-card-title>
-        <mat-card-subtitle>Sort results</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <div formArrayName="order_by">
-          <div *ngFor="let orderBy of orderByArray.controls; let i = index" [formGroupName]="i" class="order-by-row">
-            <mat-form-field appearance="outline" class="order-by-field">
-              <mat-label>Column</mat-label>
-              <input matInput formControlName="column" placeholder="e.g., l.lg_voucher_date">
-            </mat-form-field>
-
-            <mat-form-field appearance="outline" class="direction-field">
-              <mat-label>Direction</mat-label>
-              <mat-select formControlName="direction">
-                <mat-option value="ASC">ASC</mat-option>
-                <mat-option value="DESC">DESC</mat-option>
-              </mat-select>
-            </mat-form-field>
-
-            <button type="button" mat-icon-button color="warn" (click)="removeOrderBy(i)">
-              <mat-icon>delete</mat-icon>
-            </button>
-          </div>
-        </div>
-
-        <button type="button" mat-raised-button color="primary" (click)="addOrderBy()">
-          <mat-icon>add</mat-icon>
-          Add ORDER BY
-        </button>
-      </mat-card-content>
-    </mat-card>
-
-    <!-- LIMIT Section -->
-    <mat-card class="section-card">
-      <mat-card-header>
-        <mat-card-title>LIMIT</mat-card-title>
-        <mat-card-subtitle>Limit number of results</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <mat-form-field appearance="outline" class="limit-field">
-          <mat-label>Limit</mat-label>
-          <input matInput type="number" formControlName="limit" placeholder="e.g., 100">
-        </mat-form-field>
-      </mat-card-content>
-    </mat-card>
-
-    <!-- Action Buttons -->
-    <div class="action-buttons">
-      <button type="button" mat-raised-button color="accent" (click)="validateQuery()">
-        <mat-icon>check_circle</mat-icon>
-        Validate Query
+  <!-- Navigation Controls -->
+  <div class="navigation-controls">
+    <div class="nav-buttons">
+      <button mat-stroked-button (click)="previousStep()" [disabled]="currentStep === 0">
+        <mat-icon>arrow_back</mat-icon>
+        Back
       </button>
 
-      <button type="submit" mat-raised-button color="primary" [disabled]="isLoading">
-        <mat-icon *ngIf="isLoading">hourglass_empty</mat-icon>
-        <mat-icon *ngIf="!isLoading">build</mat-icon>
-        {{ isLoading ? 'Generating...' : 'Generate SQL' }}
+      <button mat-raised-button color="primary" (click)="nextStep()" 
+              [disabled]="!canProceedToNext()" 
+              *ngIf="currentStep < totalSteps - 1">
+        Next
+        <mat-icon>arrow_forward</mat-icon>
       </button>
 
-      <button type="button" mat-raised-button color="accent" (click)="executeQuery()" [disabled]="isExecuting || !generatedSQL">
-        <mat-icon *ngIf="isExecuting">hourglass_empty</mat-icon>
-        <mat-icon *ngIf="!isExecuting">play_arrow</mat-icon>
-        {{ isExecuting ? 'Executing...' : 'Execute Query' }}
-      </button>
-
-      <button type="button" mat-stroked-button (click)="clearForm()">
-        <mat-icon>clear</mat-icon>
-        Clear Form
+      <button mat-raised-button color="accent" (click)="finishWizard()" 
+              [disabled]="!canProceedToNext()" 
+              *ngIf="currentStep === totalSteps - 1">
+        <mat-icon>check</mat-icon>
+        Finish
       </button>
     </div>
-  </form>
 
-  <!-- Generated SQL Section -->
-  <mat-card *ngIf="generatedSQL" class="sql-result-card">
-    <mat-card-header>
-      <mat-card-title>Generated SQL Query</mat-card-title>
-      <mat-card-subtitle>
-        {{ queryResponse?.table_count }} table(s), {{ queryResponse?.join_count }} JOIN(s)
-      </mat-card-subtitle>
-    </mat-card-header>
-    <mat-card-content>
-      <div class="sql-container">
-        <pre class="sql-code">{{ formattedSQL }}</pre>
-      </div>
-      
-      <div class="sql-actions">
-        <button mat-raised-button color="primary" (click)="copyToClipboard(generatedSQL)">
-          <mat-icon>content_copy</mat-icon>
-          Copy SQL
-        </button>
-        
-        <button mat-stroked-button (click)="togglePreview()">
-          <mat-icon>preview</mat-icon>
-          {{ showPreview ? 'Hide' : 'Show' }} Preview
-        </button>
-      </div>
-
-      <!-- Query Results -->
-      <div *ngIf="showPreview && queryResults.length > 0" class="query-results-section">
-        <div class="results-header">
-          <h4>Query Results</h4>
-          <div class="results-info">
-            <span class="row-count">{{ queryResults.length | number }} out of {{ totalRows | number }} records</span>
-            <span class="execution-time">{{ executionTime }}</span>
-          </div>
-        </div>
-        
-        <div class="results-actions">
-          <button mat-stroked-button (click)="exportToCSV()">
-            <mat-icon>download</mat-icon>
-            Export to CSV
-          </button>
-          
-          <button mat-raised-button color="primary" (click)="openSchemaEditor()" class="warehouse-button">
-            <mat-icon>storage</mat-icon>
-            Save to Warehouse
-          </button>
-        </div>
-
-        <div class="results-table-container">
-          <table class="results-table">
-            <thead>
-              <tr>
-                <th *ngFor="let column of queryColumns">{{ column }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let row of queryResults">
-                <td *ngFor="let column of queryColumns">{{ row[column] }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- No Results Message -->
-      <div *ngIf="showPreview && queryResults.length === 0" class="no-results-section">
-        <h4>No Results Found</h4>
-        <p>Your query did not return any data. Try adjusting your WHERE conditions or check if the data exists.</p>
-      </div>
-    </mat-card-content>
-  </mat-card>
+    <div class="nav-actions">
+      <button mat-stroked-button (click)="clearForm()">
+        <mat-icon>clear</mat-icon>
+        Start Over
+      </button>
+    </div>
+  </div>
 </div>

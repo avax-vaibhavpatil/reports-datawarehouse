@@ -36,9 +36,9 @@ import { MatIconModule } from '@angular/material/icon';
             <mat-icon>link</mat-icon>
             Relationships
           </button>
-          <button mat-button routerLink="/visual-builder" routerLinkActive="active-nav">
-            <mat-icon>account_tree</mat-icon>
-            Visual Builder
+          <button mat-button routerLink="/sql-query-builder" routerLinkActive="active-nav">
+            <mat-icon>code</mat-icon>
+            Query Builder
           </button>
         </nav>
       </mat-toolbar>
