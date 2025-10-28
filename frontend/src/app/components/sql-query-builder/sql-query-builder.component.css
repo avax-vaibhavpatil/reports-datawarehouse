@@ -642,10 +642,128 @@
   font-weight: 600;
 }
 
-/* Insertion Actions */
-.insertion-actions {
-  text-align: center;
+/* Table Exists Warning */
+.warning-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+  border-radius: 8px;
+  border: 1px solid #ff9800;
+  color: #e65100;
+  margin: 16px 0;
+  font-weight: 500;
+}
+
+.warning-message mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+/* Columns Preview Editable */
+.columns-preview-editable {
   margin-top: 24px;
+}
+
+.columns-preview-editable h5 {
+  color: #333;
+  margin-bottom: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.columns-container {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.column-header {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+  border-bottom: 2px solid #bdbdbd;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #424242;
+}
+
+.column-row {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1fr;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  align-items: center;
+}
+
+.column-row:hover {
+  background: #f5f5f5;
+}
+
+.column-row:last-child {
+  border-bottom: none;
+}
+
+.col-name strong {
+  display: block;
+  color: #333;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.col-name small {
+  display: block;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.type-field {
+  width: 100%;
+}
+
+.sample-value {
+  color: #666;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.more-values {
+  color: #999;
+  font-size: 0.85rem;
+}
+
+/* SQL Preview */
+.sql-preview {
+  margin-top: 24px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.sql-preview h5 {
+  color: #1976d2;
+  margin-bottom: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.sql-preview pre {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #333;
+  background: white;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  overflow-x: auto;
 }
 
 /* SQL Review Card */

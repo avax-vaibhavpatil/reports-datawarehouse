@@ -508,9 +508,24 @@
               <mat-form-field appearance="outline" class="schema-field">
                 <mat-label>Table Name</mat-label>
                 <input matInput formControlName="tableName" placeholder="e.g., customer_summary" (input)="onTableNameChange()">
+                <mat-icon matSuffix *ngIf="isValidating">
+                  <mat-spinner diameter="20"></mat-spinner>
+                </mat-icon>
+                <mat-icon matSuffix *ngIf="!isValidating && schemaForm.get('tableName')?.valid && schemaPreview?.can_create" color="primary">
+                  check_circle
+                </mat-icon>
+                <mat-icon matSuffix *ngIf="!isValidating && schemaForm.get('tableName')?.invalid" color="warn">
+                  error
+                </mat-icon>
                 <mat-hint>Use lowercase letters, numbers, and underscores only</mat-hint>
-                <mat-error *ngIf="schemaForm.get('tableName')?.hasError('required')">Table name is required</mat-error>
+                <mat-error>{{ getTableNameError() }}</mat-error>
               </mat-form-field>
+            </div>
+
+            <!-- Table Exists Warning -->
+            <div *ngIf="schemaPreview?.table_exists?.exists" class="warning-message">
+              <mat-icon color="warn">warning</mat-icon>
+              <span>{{ schemaPreview?.table_exists?.message }}</span>
             </div>
 
             <!-- Schema Preview -->
@@ -534,15 +549,45 @@
               </div>
 
               <!-- Column Details -->
-              <div *ngIf="schemaPreview.columns" class="columns-preview">
-                <h5>Column Details:</h5>
-                <div class="columns-list">
-                  <div *ngFor="let col of schemaPreview.columns" class="column-item">
-                    <span class="column-name">{{ col.clean_name }}</span>
-                    <span class="column-type">{{ col.suggested_pg_type }}</span>
-                    <span class="column-nullable" *ngIf="col.is_nullable">NULL</span>
+              <div *ngIf="schemaPreview.columns" class="columns-preview-editable">
+                <h5>Column Details (Click to Edit Types):</h5>
+                <div class="columns-container">
+                  <div class="column-header">
+                    <span class="col-name">Column Name</span>
+                    <span class="col-type">PostgreSQL Type</span>
+                    <span class="col-sample">Sample Values</span>
+                  </div>
+                  <div *ngFor="let column of schemaPreview.columns; let i = index" class="column-row">
+                    <div class="col-name">
+                      <strong>{{ column.original_name }}</strong>
+                      <small *ngIf="column.clean_name !== column.original_name">
+                        ({{ column.clean_name }})
+                      </small>
+                    </div>
+                    <div class="col-type">
+                      <mat-form-field appearance="outline" class="type-field">
+                        <mat-select [value]="column.suggested_pg_type" 
+                                 (selectionChange)="updateColumnType(i, $event.value)">
+                          <mat-option *ngFor="let type of postgresDataTypes" [value]="type">
+                            {{ type }}
+                          </mat-option>
+                        </mat-select>
+                      </mat-form-field>
+                    </div>
+                    <div class="col-sample">
+                      <span *ngFor="let value of column.sample_values.slice(0, 2); let last = last" class="sample-value">
+                        {{ value }}<span *ngIf="!last">, </span>
+                      </span>
+                      <span *ngIf="column.sample_values.length > 2" class="more-values">...</span>
+                    </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- CREATE TABLE SQL Preview -->
+              <div *ngIf="schemaPreview.create_sql" class="sql-preview">
+                <h5>CREATE TABLE Statement:</h5>
+                <pre>{{ schemaPreview.create_sql }}</pre>
               </div>
             </div>
 

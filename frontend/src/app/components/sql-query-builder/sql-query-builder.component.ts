@@ -86,6 +86,18 @@ export class SQLQueryBuilderComponent implements OnInit {
   warehouseTable: string = '';
   isSaving = false;
   
+  // PostgreSQL data type options
+  postgresDataTypes = [
+    'TEXT', 
+    'VARCHAR(2)', 'VARCHAR(3)', 'VARCHAR(10)', 'VARCHAR(15)', 'VARCHAR(25)', 'VARCHAR(30)', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(255)', 'VARCHAR(500)', 'VARCHAR(1000)', 'VARCHAR(2000)',
+    'CHAR(1)', 'CHAR(2)', 'CHAR(3)', 'CHAR(10)',
+    'INTEGER', 'BIGINT', 'SMALLINT', 
+    'DECIMAL(10,2)', 'DECIMAL(13,2)', 'DECIMAL(15,2)', 'DECIMAL(18,4)',
+    'NUMERIC(10,2)', 'NUMERIC(13,2)', 'NUMERIC(15,2)',
+    'DOUBLE PRECISION', 'REAL', 'BOOLEAN', 
+    'DATE', 'TIMESTAMP', 'TIME'
+  ];
+  
   // Schema editor integration properties
   schemaForm: FormGroup;
   schemaPreview: any = null;
@@ -1105,6 +1117,12 @@ export class SQLQueryBuilderComponent implements OnInit {
         next: (response) => {
           this.isSchemaLoading = false;
           this.schemaPreview = response;
+          
+          // If schema preview doesn't have create_sql, generate it
+          if (!response.create_sql && response.columns) {
+            this.updateCreateTableSQL();
+          }
+          
           console.log('Schema preview generated:', response);
         },
         error: (error) => {
@@ -1288,8 +1306,77 @@ export class SQLQueryBuilderComponent implements OnInit {
   onTableNameChange(): void {
     // Debounce the schema preview generation
     setTimeout(() => {
+      this.validateTableName();
       this.generateSchemaPreview();
     }, 500);
+  }
+
+  validateTableName(): void {
+    const tableName = this.schemaForm.get('tableName')?.value?.trim();
+    if (!tableName) {
+      return;
+    }
+
+    this.isValidating = true;
+    const schema = this.schemaForm.get('schema')?.value || 'processed_data';
+
+    this.http.post<any>('http://localhost:8000/api/schema-editor/validate-table-name', {
+      table_name: tableName.trim(),
+      db_schema: schema
+    }).subscribe({
+      next: (response) => {
+        this.isValidating = false;
+        if (response.success) {
+          // Update schema preview with validation info
+          this.schemaPreview = { ...this.schemaPreview, ...response };
+        }
+      },
+      error: (error) => {
+        this.isValidating = false;
+        console.error('Table validation error:', error);
+        this.snackBar.open('Error validating table name', 'Close', { duration: 3000 });
+      }
+    });
+  }
+
+  updateColumnType(columnIndex: number, newType: string): void {
+    if (this.schemaPreview && this.schemaPreview.columns[columnIndex]) {
+      const column = this.schemaPreview.columns[columnIndex];
+      column.suggested_pg_type = newType;
+      // Regenerate CREATE TABLE SQL with updated types
+      this.updateCreateTableSQL();
+    }
+  }
+
+  updateCreateTableSQL(): void {
+    if (!this.schemaPreview || !this.schemaPreview.columns) {
+      return;
+    }
+
+    const tableName = this.schemaForm.get('tableName')?.value;
+    const schema = this.schemaForm.get('schema')?.value || 'processed_data';
+    
+    // Generate CREATE TABLE SQL based on updated column types
+    const columnDefinitions = this.schemaPreview.columns
+      .map((col: any) => `  ${col.clean_name} ${col.suggested_pg_type}`)
+      .join(',\n');
+    
+    this.schemaPreview.create_sql = 
+      `CREATE TABLE IF NOT EXISTS ${schema}.${tableName} (\n${columnDefinitions}\n);`;
+  }
+
+  getTableNameError(): string {
+    const control = this.schemaForm.get('tableName');
+    if (control?.hasError('required')) {
+      return 'Table name is required';
+    }
+    if (control?.hasError('duplicate')) {
+      return control.errors?.['message'] || 'This table name already exists';
+    }
+    if (control?.hasError('invalid')) {
+      return control.errors?.['message'] || 'Invalid table name';
+    }
+    return '';
   }
 
   // Step 4: Save to Warehouse methods
