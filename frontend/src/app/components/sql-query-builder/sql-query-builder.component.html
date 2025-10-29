@@ -265,6 +265,50 @@
           </mat-card-content>
         </mat-card>
 
+        <!-- Aggregations Section -->
+        <mat-card class="section-card">
+          <mat-card-header>
+            <mat-card-title>Aggregations</mat-card-title>
+            <mat-card-subtitle>Apply aggregation functions to columns</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div formArrayName="aggregations">
+              <div *ngFor="let aggregation of aggregationsArray.controls; let i = index" [formGroupName]="i" class="aggregation-row">
+                <mat-form-field appearance="outline" class="aggregation-field">
+                  <mat-label>Function</mat-label>
+                  <mat-select formControlName="function">
+                    <mat-option value="SUM">SUM</mat-option>
+                    <mat-option value="COUNT">COUNT</mat-option>
+                    <mat-option value="AVG">AVG</mat-option>
+                    <mat-option value="MIN">MIN</mat-option>
+                    <mat-option value="MAX">MAX</mat-option>
+                    <mat-option value="COUNT_DISTINCT">COUNT DISTINCT</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="aggregation-field">
+                  <mat-label>Column</mat-label>
+                  <input matInput formControlName="column" placeholder="e.g., t1.amount">
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="aggregation-field">
+                  <mat-label>Alias (Optional)</mat-label>
+                  <input matInput formControlName="alias" placeholder="e.g., total_amount">
+                </mat-form-field>
+
+                <button type="button" mat-icon-button color="warn" (click)="removeAggregation(i)">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+
+            <button type="button" mat-raised-button color="primary" (click)="addAggregation()">
+              <mat-icon>add</mat-icon>
+              Add Aggregation
+            </button>
+          </mat-card-content>
+        </mat-card>
+
         <!-- GROUP BY Section -->
         <mat-card class="section-card">
           <mat-card-header>

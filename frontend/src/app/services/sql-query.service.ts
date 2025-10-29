@@ -31,6 +31,12 @@ export interface WhereCondition {
   logical_operator: string;
 }
 
+export interface AggregationConfig {
+  column: string;
+  function: string;
+  alias?: string;
+}
+
 export interface OrderByConfig {
   column: string;
   direction: string;
@@ -40,6 +46,7 @@ export interface SQLQueryRequest {
   tables: TableConfig[];
   joins?: JoinConfig[];
   where_conditions?: WhereCondition[];
+  aggregations?: AggregationConfig[];
   group_by?: string[];
   order_by?: OrderByConfig[];
   limit?: number;

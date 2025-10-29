@@ -425,6 +425,23 @@
   min-width: 200px;
 }
 
+/* Aggregations Section */
+.aggregation-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.aggregation-field {
+  flex: 1;
+  min-width: 150px;
+}
+
 /* ORDER BY Section */
 .order-by-row {
   display: flex;

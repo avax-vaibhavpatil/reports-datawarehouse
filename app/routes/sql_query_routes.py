@@ -35,6 +35,11 @@ class WhereCondition(BaseModel):
     right_side: str
     logical_operator: str = "AND"
 
+class AggregationConfig(BaseModel):
+    column: str
+    function: str
+    alias: Optional[str] = None
+
 class OrderByConfig(BaseModel):
     column: str
     direction: str = "ASC"
@@ -43,6 +48,7 @@ class SQLQueryRequest(BaseModel):
     tables: List[TableConfig]
     joins: Optional[List[JoinConfig]] = []
     where_conditions: Optional[List[WhereCondition]] = []
+    aggregations: Optional[List[AggregationConfig]] = []
     group_by: Optional[List[str]] = []
     order_by: Optional[List[OrderByConfig]] = []
     limit: Optional[int] = None
@@ -146,6 +152,7 @@ async def generate_sql_query(
             "tables": [table.dict() for table in request.tables],
             "joins": [join.dict() for join in request.joins] if request.joins else [],
             "where_conditions": [where.dict() for where in request.where_conditions] if request.where_conditions else [],
+            "aggregations": [agg.dict() for agg in request.aggregations] if request.aggregations else [],
             "group_by": request.group_by or [],
             "order_by": [order.dict() for order in request.order_by] if request.order_by else [],
             "limit": request.limit

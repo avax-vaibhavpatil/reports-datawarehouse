@@ -21,7 +21,7 @@ import { FormsModule } from '@angular/forms';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse } from '../../services/sql-query.service';
+import { SQLQueryService, TableInfo, JoinType, SQLQueryRequest, SQLQueryResponse, AggregationConfig } from '../../services/sql-query.service';
 import { SchemaEditorDialogComponent, SchemaEditorData } from '../schema-editor-dialog/schema-editor-dialog.component';
 import { ColumnMatchingService, ColumnRelationship } from '../../services/column-matching.service';
 import { FilenameDialogComponent, FilenameDialogData } from '../filename-dialog/filename-dialog.component';
@@ -147,6 +147,7 @@ export class SQLQueryBuilderComponent implements OnInit {
       tables: this.fb.array([]),
       joins: this.fb.array([]),
       where_conditions: this.fb.array([]),
+      aggregations: this.fb.array([]),
       group_by: this.fb.array([]),
       order_by: this.fb.array([]),
       limit: [null]
@@ -170,6 +171,10 @@ export class SQLQueryBuilderComponent implements OnInit {
 
   get whereConditionsArray(): FormArray {
     return this.queryForm.get('where_conditions') as FormArray;
+  }
+
+  get aggregationsArray(): FormArray {
+    return this.queryForm.get('aggregations') as FormArray;
   }
 
   get groupByArray(): FormArray {
@@ -411,6 +416,19 @@ export class SQLQueryBuilderComponent implements OnInit {
     this.whereConditionsArray.removeAt(index);
   }
 
+  addAggregation(): void {
+    const aggregationForm = this.fb.group({
+      column: ['', Validators.required],
+      function: ['SUM', Validators.required],
+      alias: ['']
+    });
+    this.aggregationsArray.push(aggregationForm);
+  }
+
+  removeAggregation(index: number): void {
+    this.aggregationsArray.removeAt(index);
+  }
+
   addGroupBy(): void {
     const groupByForm = this.fb.group({
       column: ['', Validators.required]
@@ -591,6 +609,11 @@ export class SQLQueryBuilderComponent implements OnInit {
           operator: where.operator,
           right_side: where.right_side,
           logical_operator: where.logical_operator
+        })),
+        aggregations: formValue.aggregations.map((agg: any) => ({
+          column: agg.column,
+          function: agg.function,
+          alias: agg.alias || undefined
         })),
         group_by: formValue.group_by.map((gb: any) => gb.column).filter((col: string) => col),
         order_by: formValue.order_by.map((ob: any) => ({

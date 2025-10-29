@@ -200,8 +200,17 @@ class SQLQueryService:
             }
         """
         try:
+            aggregations = query_config.get("aggregations", [])
+            # Debug aggregations if present
+            if aggregations:
+                print(f"DEBUG: Found {len(aggregations)} aggregation(s): {aggregations}")
+            
             # Build SELECT clause - now includes columns from joined tables
-            select_clause = self._build_select_clause(query_config["tables"], query_config.get("joins", []))
+            select_clause = self._build_select_clause(
+                query_config["tables"], 
+                query_config.get("joins", []),
+                aggregations
+            )
             
             # Build FROM clause
             from_clause = self._build_from_clause(query_config["tables"])
@@ -245,39 +254,54 @@ class SQLQueryService:
             self.logger.error(f"Error generating SQL query: {e}")
             raise ValueError(f"Failed to generate SQL query: {str(e)}")
     
-    def _build_select_clause(self, tables: List[Dict], joins: List[Dict] = None) -> str:
-        """Build SELECT clause with table aliases and custom expressions, including joined table columns"""
+    def _build_select_clause(self, tables: List[Dict], joins: List[Dict] = None, aggregations: List[Dict] = None) -> str:
+        """Build SELECT clause with table aliases and custom expressions, including joined table columns and aggregations"""
         columns = []
         
-        # Process main tables
-        for table in tables:
-            table_alias = table.get("alias") or ""
-            if isinstance(table_alias, str):
-                table_alias = table_alias.strip()
-            else:
-                table_alias = ""
-            
-            # Use table name if no alias or alias is "None"
-            if not table_alias or table_alias == "None":
-                table_alias = table["name"]
-            
-            table_columns = table.get("columns", [])
-            custom_expressions = table.get("custom_expressions", [])
-            
-            if not table_columns and not custom_expressions:
-                # If no specific columns, select all
-                columns.append(f"{table_alias}.*")
-            else:
-                # Add regular columns
-                for column in table_columns:
-                    columns.append(f"{table_alias}.{column}")
+        # If aggregations exist, add them first
+        if aggregations:
+            for agg in aggregations:
+                function = agg.get("function", "SUM")
+                column = agg.get("column", "")
+                alias = agg.get("alias")
                 
-                # Add custom expressions (CASE statements, etc.)
-                for expr in custom_expressions:
-                    columns.append(expr)
+                if column:
+                    if alias:
+                        columns.append(f"{function}({column}) AS {alias}")
+                    else:
+                        columns.append(f"{function}({column})")
         
-        # Process joined tables
-        if joins:
+        # Process main tables (only if no aggregations OR if we're showing individual columns)
+        # When aggregations are present and no GROUP BY columns are specified, only return aggregations
+        if not aggregations or tables[0].get("columns"):
+            for table in tables:
+                table_alias = table.get("alias") or ""
+                if isinstance(table_alias, str):
+                    table_alias = table_alias.strip()
+                else:
+                    table_alias = ""
+                
+                # Use table name if no alias or alias is "None"
+                if not table_alias or table_alias == "None":
+                    table_alias = table["name"]
+                
+                table_columns = table.get("columns", [])
+                custom_expressions = table.get("custom_expressions", [])
+                
+                if not table_columns and not custom_expressions and not aggregations:
+                    # If no specific columns and no aggregations, select all
+                    columns.append(f"{table_alias}.*")
+                elif table_columns or custom_expressions:
+                    # Add regular columns
+                    for column in table_columns:
+                        columns.append(f"{table_alias}.{column}")
+                    
+                    # Add custom expressions (CASE statements, etc.)
+                    for expr in custom_expressions:
+                        columns.append(expr)
+        
+        # Process joined tables (only if no aggregations OR if we're showing joined columns)
+        if joins and (not aggregations or any(join.get("columns") for join in joins)):
             for join in joins:
                 join_alias = join.get("alias") or ""
                 if isinstance(join_alias, str):
@@ -458,6 +482,17 @@ class SQLQueryService:
                         for field in required_fields:
                             if field not in condition:
                                 errors.append(f"Join {i+1}, Condition {j+1}: '{field}' is required")
+        
+        # Validate aggregations
+        if "aggregations" in query_config and query_config["aggregations"]:
+            for i, agg in enumerate(query_config["aggregations"]):
+                if "function" not in agg:
+                    errors.append(f"Aggregation {i+1}: 'function' is required")
+                elif agg["function"] not in ["SUM", "COUNT", "AVG", "MIN", "MAX", "COUNT_DISTINCT"]:
+                    warnings.append(f"Aggregation {i+1}: Uncommon function '{agg['function']}'")
+                
+                if "column" not in agg:
+                    errors.append(f"Aggregation {i+1}: 'column' is required")
         
         return {
             "valid": len(errors) == 0,
