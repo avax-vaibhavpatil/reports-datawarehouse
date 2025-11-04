@@ -201,15 +201,13 @@ class SQLQueryService:
         """
         try:
             aggregations = query_config.get("aggregations", [])
-            # Debug aggregations if present
-            if aggregations:
-                print(f"DEBUG: Found {len(aggregations)} aggregation(s): {aggregations}")
             
             # Build SELECT clause - now includes columns from joined tables
             select_clause = self._build_select_clause(
                 query_config["tables"], 
                 query_config.get("joins", []),
-                aggregations
+                aggregations,
+                query_config.get("group_by", [])
             )
             
             # Build FROM clause
@@ -254,9 +252,75 @@ class SQLQueryService:
             self.logger.error(f"Error generating SQL query: {e}")
             raise ValueError(f"Failed to generate SQL query: {str(e)}")
     
-    def _build_select_clause(self, tables: List[Dict], joins: List[Dict] = None, aggregations: List[Dict] = None) -> str:
+    def _build_select_clause(self, tables: List[Dict], joins: List[Dict] = None, aggregations: List[Dict] = None, group_by: List[str] = None) -> str:
         """Build SELECT clause with table aliases and custom expressions, including joined table columns and aggregations"""
         columns = []
+        group_by = group_by or []
+        columns_set = set()  # Track all column variations to avoid duplicates
+        
+        # Helper function to normalize column name for comparison (extracts base column name)
+        def get_base_column_name(col_name: str) -> str:
+            """Extract base column name (without table prefix)"""
+            # Remove any SQL functions or AS aliases first
+            col_clean = col_name.strip()
+            # Handle aggregate functions - extract column from inside function
+            if '(' in col_clean and ')' in col_clean:
+                # For functions like SUM(ledger.lgd_amount), extract the column part
+                func_match = col_clean.split('(')
+                if len(func_match) > 1:
+                    col_part = func_match[1].split(')')[0].strip()
+                    if '.' in col_part:
+                        return col_part.split('.')[-1]
+                    return col_part
+            # Handle AS aliases
+            if ' AS ' in col_clean.upper():
+                col_part = col_clean.split(' AS ')[0].strip()
+                if '.' in col_part:
+                    return col_part.split('.')[-1]
+                return col_part
+            # Regular column
+            if '.' in col_clean:
+                return col_clean.split('.')[-1]
+            return col_clean
+        
+        # Track base column names that have been added (for duplicate detection)
+        added_base_columns = set()
+        
+        # Helper function to check if column is already added (checks both prefixed and non-prefixed versions)
+        def is_column_already_added(col_name: str) -> bool:
+            """Check if column or any variation is already in columns_set"""
+            # Check exact match
+            if col_name in columns_set:
+                return True
+            
+            # Get base column name for comparison
+            base_name = get_base_column_name(col_name)
+            
+            # Check if this base column name has already been added
+            if base_name in added_base_columns:
+                return True
+            
+            # Also check if any existing column has the same base name
+            for existing_col in columns_set:
+                existing_base = get_base_column_name(existing_col)
+                # If base names match, they're the same column (duplicate)
+                if existing_base == base_name:
+                    return True
+            
+            return False
+        
+        # Helper function to add column and track it
+        def add_column(col_name: str):
+            """Add column to list and track variations"""
+            if not is_column_already_added(col_name):
+                columns.append(col_name)
+                columns_set.add(col_name)
+                # Track the base column name (without prefix) for duplicate detection
+                base_name = get_base_column_name(col_name)
+                added_base_columns.add(base_name)
+        
+        # Track which columns are being aggregated (to prevent selecting individual values)
+        aggregated_columns = set()
         
         # If aggregations exist, add them first
         if aggregations:
@@ -266,10 +330,162 @@ class SQLQueryService:
                 alias = agg.get("alias")
                 
                 if column:
-                    if alias:
-                        columns.append(f"{function}({column}) AS {alias}")
+                    # Track that this column is being aggregated
+                    base_agg_col = get_base_column_name(column)
+                    aggregated_columns.add(base_agg_col)
+                    
+                    # Handle COUNT_DISTINCT specially - SQL syntax is COUNT(DISTINCT column)
+                    if function == "COUNT_DISTINCT":
+                        sql_function = f"COUNT(DISTINCT {column})"
                     else:
-                        columns.append(f"{function}({column})")
+                        sql_function = f"{function}({column})"
+                    
+                    if alias:
+                        columns.append(f"{sql_function} AS {alias}")
+                        columns_set.add(f"{sql_function} AS {alias}")
+                    else:
+                        columns.append(sql_function)
+                        columns_set.add(sql_function)
+        
+        # Build a map of all table/join aliases and their columns for GROUP BY normalization
+        # We need to check both selected columns AND all columns that might be in GROUP BY
+        table_column_map = {}  # Maps column_name -> (table_alias, column_name)
+        join_column_map = {}  # Maps column_name -> (join_alias, column_name)
+        
+        # Map main table columns (selected columns)
+        for table in tables:
+            table_alias = table.get("alias") or ""
+            if isinstance(table_alias, str):
+                table_alias = table_alias.strip()
+            else:
+                table_alias = ""
+            
+            if not table_alias or table_alias == "None":
+                table_alias = table["name"]
+            
+            for column in table.get("columns", []):
+                # Only map if not already mapped (first occurrence wins)
+                if column not in table_column_map:
+                    table_column_map[column] = (table_alias, column)
+        
+        # Map join table columns (selected columns)
+        if joins:
+            for join in joins:
+                join_alias = join.get("alias") or ""
+                if isinstance(join_alias, str):
+                    join_alias = join_alias.strip()
+                else:
+                    join_alias = ""
+                
+                if not join_alias or join_alias == "None":
+                    join_alias = join["table"]
+                
+                for column in join.get("columns", []):
+                    # Only map if not already mapped (first occurrence wins)
+                    if column not in join_column_map:
+                        join_column_map[column] = (join_alias, column)
+        
+        # Also check GROUP BY columns to find which table they belong to
+        # This helps normalize GROUP BY columns that aren't in selected columns yet
+        if group_by:
+            for group_col in group_by:
+                col_name = group_col.strip()
+                # If it has a prefix, extract table info
+                if '.' in col_name:
+                    parts = col_name.split('.', 1)
+                    table_ref = parts[0]
+                    col_ref = parts[1]
+                    # Try to find matching table/join
+                    for table in tables:
+                        table_alias = table.get("alias") or ""
+                        if isinstance(table_alias, str):
+                            table_alias = table_alias.strip()
+                        else:
+                            table_alias = ""
+                        if not table_alias or table_alias == "None":
+                            table_alias = table["name"]
+                        if table_alias == table_ref or table["name"] == table_ref:
+                            if col_ref not in table_column_map:
+                                table_column_map[col_ref] = (table_alias, col_ref)
+                            break
+                    if joins:
+                        for join in joins:
+                            join_alias = join.get("alias") or ""
+                            if isinstance(join_alias, str):
+                                join_alias = join_alias.strip()
+                            else:
+                                join_alias = ""
+                            if not join_alias or join_alias == "None":
+                                join_alias = join["table"]
+                            if join_alias == table_ref or join["table"] == table_ref:
+                                if col_ref not in join_column_map:
+                                    join_column_map[col_ref] = (join_alias, col_ref)
+                                break
+                else:
+                    # No prefix - try to find in table columns first, then join columns
+                    # Check if this column name exists in any selected table columns
+                    found_in_table = False
+                    for table in tables:
+                        table_alias = table.get("alias") or ""
+                        if isinstance(table_alias, str):
+                            table_alias = table_alias.strip()
+                        else:
+                            table_alias = ""
+                        if not table_alias or table_alias == "None":
+                            table_alias = table["name"]
+                        if col_name in table.get("columns", []):
+                            if col_name not in table_column_map:
+                                table_column_map[col_name] = (table_alias, col_name)
+                            found_in_table = True
+                            break
+                    if not found_in_table and joins:
+                        for join in joins:
+                            join_alias = join.get("alias") or ""
+                            if isinstance(join_alias, str):
+                                join_alias = join_alias.strip()
+                            else:
+                                join_alias = ""
+                            if not join_alias or join_alias == "None":
+                                join_alias = join["table"]
+                            if col_name in join.get("columns", []):
+                                if col_name not in join_column_map:
+                                    join_column_map[col_name] = (join_alias, col_name)
+                                break
+        
+        # Track which GROUP BY columns we need to add (defer normalization until we process table columns)
+        pending_group_by_columns = []
+        # Track which GROUP BY columns have been successfully added (to prevent duplicates)
+        added_group_by_columns = set()
+        
+        # If GROUP BY columns are specified, normalize them to use table prefixes
+        # GROUP BY columns must appear in SELECT when using aggregations
+        if group_by:
+            for group_col in group_by:
+                col_name = group_col.strip()
+                base_col = get_base_column_name(col_name)
+                
+                # Check if this column exists in table or join columns
+                # If it has a prefix already, use it as-is
+                if '.' in col_name:
+                    add_column(col_name)
+                    added_group_by_columns.add(base_col)
+                else:
+                    # Try to find matching column in tables or joins
+                    normalized_col = None
+                    if col_name in table_column_map:
+                        table_alias, col = table_column_map[col_name]
+                        normalized_col = f"{table_alias}.{col}"
+                    elif col_name in join_column_map:
+                        join_alias, col = join_column_map[col_name]
+                        normalized_col = f"{join_alias}.{col}"
+                    
+                    # Add normalized column if found, otherwise defer (will be added when processing table columns)
+                    if normalized_col:
+                        add_column(normalized_col)
+                        added_group_by_columns.add(base_col)
+                    else:
+                        # Defer - will be added when processing table/join columns if found, otherwise add as-is at the end
+                        pending_group_by_columns.append(col_name)
         
         # Process main tables (only if no aggregations OR if we're showing individual columns)
         # When aggregations are present and no GROUP BY columns are specified, only return aggregations
@@ -290,15 +506,50 @@ class SQLQueryService:
                 
                 if not table_columns and not custom_expressions and not aggregations:
                     # If no specific columns and no aggregations, select all
-                    columns.append(f"{table_alias}.*")
+                    add_column(f"{table_alias}.*")
                 elif table_columns or custom_expressions:
-                    # Add regular columns
+                    # Add regular columns (skip if already in GROUP BY or if being aggregated)
                     for column in table_columns:
-                        columns.append(f"{table_alias}.{column}")
+                        base_col = get_base_column_name(column)
+                        full_col_name = f"{table_alias}.{column}"
+                        
+                        # Skip if this column is already added (via GROUP BY normalization)
+                        if is_column_already_added(full_col_name):
+                            continue
+                        
+                        # Skip if this column was already added as a GROUP BY column
+                        if base_col in added_group_by_columns:
+                            continue
+                        
+                        # If this column is in pending GROUP BY, add it now and remove from pending
+                        if column in pending_group_by_columns:
+                            add_column(full_col_name)
+                            added_group_by_columns.add(base_col)
+                            # Remove from pending (use list comprehension to handle multiple occurrences)
+                            pending_group_by_columns = [c for c in pending_group_by_columns if c != column]
+                            continue
+                        
+                        # Skip if this column is being aggregated (unless it's in GROUP BY)
+                        if base_col in aggregated_columns:
+                            # Only skip if aggregations exist and this column is not in GROUP BY
+                            if aggregations:
+                                # Check if this column is in GROUP BY (in any form)
+                                is_in_group_by = False
+                                for gb_col in group_by:
+                                    gb_base = get_base_column_name(gb_col.strip())
+                                    if gb_base == base_col:
+                                        is_in_group_by = True
+                                        break
+                                if not is_in_group_by:
+                                    continue  # Skip this column - it's being aggregated
+                        
+                        add_column(full_col_name)
                     
                     # Add custom expressions (CASE statements, etc.)
                     for expr in custom_expressions:
-                        columns.append(expr)
+                        if expr not in columns_set:
+                            columns.append(expr)
+                            columns_set.add(expr)
         
         # Process joined tables (only if no aggregations OR if we're showing joined columns)
         if joins and (not aggregations or any(join.get("columns") for join in joins)):
@@ -316,13 +567,54 @@ class SQLQueryService:
                 join_columns = join.get("columns", [])
                 join_custom_expressions = join.get("custom_expressions", [])
                 
-                # Add regular columns from joined table
+                # Add regular columns from joined table (skip if being aggregated)
                 for column in join_columns:
-                    columns.append(f"{join_alias}.{column}")
+                    base_col = get_base_column_name(column)
+                    full_col_name = f"{join_alias}.{column}"
+                    
+                    # Skip if this column is already added (via GROUP BY normalization)
+                    if is_column_already_added(full_col_name):
+                        continue
+                    
+                    # Skip if this column was already added as a GROUP BY column
+                    if base_col in added_group_by_columns:
+                        continue
+                    
+                    # If this column is in pending GROUP BY, add it now and remove from pending
+                    if column in pending_group_by_columns:
+                        add_column(full_col_name)
+                        added_group_by_columns.add(base_col)
+                        # Remove from pending (use list comprehension to handle multiple occurrences)
+                        pending_group_by_columns = [c for c in pending_group_by_columns if c != column]
+                        continue
+                    
+                    # Skip if this column is being aggregated (unless it's in GROUP BY)
+                    if base_col in aggregated_columns:
+                        # Only skip if aggregations exist and this column is not in GROUP BY
+                        if aggregations:
+                            # Check if this column is in GROUP BY (in any form)
+                            is_in_group_by = False
+                            for gb_col in group_by:
+                                gb_base = get_base_column_name(gb_col.strip())
+                                if gb_base == base_col:
+                                    is_in_group_by = True
+                                    break
+                            if not is_in_group_by:
+                                continue  # Skip this column - it's being aggregated
+                    
+                    add_column(full_col_name)
                 
                 # Add custom expressions from joined table
                 for expr in join_custom_expressions:
-                    columns.append(expr)
+                    if expr not in columns_set:
+                        columns.append(expr)
+                        columns_set.add(expr)
+        
+        # Add any pending GROUP BY columns that weren't found in table/join columns
+        # These will be added without prefix (they might be expressions or we couldn't determine table)
+        for pending_col in pending_group_by_columns:
+            if not is_column_already_added(pending_col):
+                add_column(pending_col)
         
         return f"SELECT {', '.join(columns)}"
     
